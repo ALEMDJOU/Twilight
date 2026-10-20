@@ -1,10 +1,34 @@
+<div align="center">
+
+<img src="public/favicon.svg" alt="Twilight logo" width="96" height="96">
+
 # Twilight
 
 **An offline-first web app to learn English with short lessons, retrieval practice and spaced-repetition flashcards — designed for French speakers.**
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-6B2D66.svg)](LICENSE)
+[![Node.js ≥ 22.5](https://img.shields.io/badge/node-%E2%89%A5%2022.5-A4487A.svg)](https://nodejs.org)
+![Dependencies: none](https://img.shields.io/badge/dependencies-none-E0785F.svg)
+![Offline first](https://img.shields.io/badge/offline-first-F2B05E.svg)
+![PWA](https://img.shields.io/badge/PWA-ready-2B2A5C.svg)
+
+[Features](#features) · [Quick start](#quick-start) · [Content](#content) · [Scripts](#scripts) · [Contributing](#contributing) · [License](#license)
+
+🇫🇷 Guide d'utilisation en français : [LISEZMOI.md](LISEZMOI.md)
+
+<br>
+
+<img src="docs/screenshots/dashboard-light.jpg" alt="Twilight dashboard — light theme" width="900">
+
+</div>
+
 Twilight runs entirely on your own computer: a tiny Node.js server, a SQLite database for your progress, and a Progressive Web App that keeps working without internet, including natural text-to-speech.
 
-> 🇫🇷 Guide d'utilisation en français : [LISEZMOI.md](LISEZMOI.md)
+## Screenshots
+
+| Dark theme | Library |
+|:---:|:---:|
+| <img src="docs/screenshots/dashboard-dark.jpg" alt="Dashboard in dark theme" width="440"> | <img src="docs/screenshots/library.jpg" alt="Library of books" width="440"> |
 
 ---
 
@@ -118,6 +142,7 @@ twilight/
 │   │   ├── tts.js, piper.js# text-to-speech (Piper + system voices)
 │   │   └── views/          # dashboard, session, library, review, settings
 │   └── fonts/              # self-hosted fonts (OFL)
+├── docs/screenshots/       # images used in this README
 ├── samples/content/        # original sample content
 ├── tools/                  # content validation, photo and voice download
 └── data/                   # your progress (git-ignored)
