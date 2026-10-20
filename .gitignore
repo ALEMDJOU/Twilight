@@ -1,0 +1,51 @@
+# ─────────────────────────────────────────────────────────────
+# Twilight — fichiers à ne jamais publier
+# ─────────────────────────────────────────────────────────────
+
+# Livres sources (protégés par le droit d'auteur)
+*.pdf
+*.epub
+*.mobi
+books/
+
+# Contenu tiré des livres : chacun le génère à partir de ses propres livres.
+# Un contenu d'exemple original est fourni dans samples/content/.
+public/content/
+
+# Photos téléchargées depuis Wikimedia Commons (npm run images)
+public/img/
+
+# Voix Piper (~100 Mo, npm run setup:voice)
+public/vendor/piper/
+
+# Données personnelles : progression SQLite et sauvegardes
+data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+twilight-sauvegarde-*.json
+
+# Dépendances et caches
+node_modules/
+.npm/
+*.part
+
+# Journaux
+*.log
+npm-debug.log*
+
+# Environnement local
+.env
+.env.*
+
+# Éditeurs et systèmes
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Outils locaux
+.claude/

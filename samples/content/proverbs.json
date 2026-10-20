@@ -1,0 +1,27 @@
+{
+ "book": "proverbs",
+ "title": "Sample proverbs",
+ "items": [
+  {
+   "n": 1,
+   "en": "Practice makes perfect.",
+   "meaning": "If you do something regularly, you become very good at it.",
+   "example": "I play the guitar every day: practice makes perfect.",
+   "fr": "C'est en forgeant qu'on devient forgeron."
+  },
+  {
+   "n": 2,
+   "en": "Better late than never.",
+   "meaning": "It is better to do something late than not to do it at all.",
+   "example": "He finally replied to my email. Better late than never!",
+   "fr": "Mieux vaut tard que jamais."
+  },
+  {
+   "n": 3,
+   "en": "Rome wasn't built in a day.",
+   "meaning": "Important things take time and patience.",
+   "example": "Learning English takes time. Rome wasn't built in a day.",
+   "fr": "Paris ne s'est pas fait en un jour."
+  }
+ ]
+}

@@ -1,0 +1,37 @@
+{
+ "book": "grammar", "n": 1,
+ "titleFr": "Le présent continu (I am doing)",
+ "goal": "Utiliser **am / is / are + -ing** pour une action **en cours** maintenant ou autour de maintenant.",
+ "sections": [
+  {"id": "A", "title": "Form",
+   "table": {"head": ["subject", "be", "verb + -ing"], "rows": [["I", "am ('m)", "working"], ["he / she / it", "is ('s)", "reading"], ["we / you / they", "are ('re)", "waiting"]]},
+   "tip": "Négation : *I'm **not** working.* Question : ***Are** you working?*"},
+  {"id": "B", "title": "Use",
+   "en": "We use the present continuous for something **in progress now** (*Look! It's **raining**.*) or **around now**, not necessarily at this exact moment (*I'm **reading** a great book at the moment.*).",
+   "examples": [
+    {"en": "Please be quiet. The baby is sleeping.", "fr": "Le bébé dort (en ce moment)."},
+    {"en": "Sarah is learning English this year.", "fr": "Sarah apprend l'anglais cette année."}
+   ],
+   "fr": "En français on dit souvent « être en train de » : *I'm cooking* = je suis en train de cuisiner."}
+ ],
+ "remember": [
+  "**am / is / are + -ing** : action en cours.",
+  "Maintenant (*now, at the moment, Look!*) ou période actuelle (*this week, these days*).",
+  "Négation **not** après *be* ; question : *be* avant le sujet."
+ ],
+ "exercises": [
+  {"t": "gap", "q": "Listen! Somebody ___ the piano. (play)", "a": ["is playing", "'s playing"], "why": "Action en cours → **is playing**."},
+  {"t": "gap", "q": "I ___ a coat because it's cold. (wear)", "a": ["am wearing", "'m wearing"], "why": "**am wearing**."},
+  {"t": "mcq", "q": "'Where's Tom?' 'He ___ a shower.'", "o": ["is having", "has", "have"], "a": 0, "why": "Maintenant → **is having**."},
+  {"t": "fix", "q": "They is waiting for the bus.", "a": ["They are waiting for the bus.", "They're waiting for the bus."], "why": "*they* → **are**."},
+  {"t": "write", "q": "Make a question: you / work / today?", "a": ["Are you working today?"], "why": "***Are** you working…?*"},
+  {"t": "order", "q": "Put the words in order.", "a": ["She isn't listening to me."], "words": ["listening", "She", "me.", "isn't", "to"]}
+ ],
+ "cards": [
+  {"q": "« Il pleut. » (maintenant)", "en": "It's raining.", "fr": "be + -ing"},
+  {"q": "« Je suis en train de travailler. »", "en": "I'm working.", "fr": "am + -ing"},
+  {"q": "« Tu m'écoutes ? »", "en": "Are you listening to me?", "fr": "question : be + sujet"},
+  {"en": "at the moment", "fr": "en ce moment", "pic": "⏱️"},
+  {"en": "to wait for", "fr": "attendre", "pic": "🚌"}
+ ]
+}
