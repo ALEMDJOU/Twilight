@@ -1,8 +1,9 @@
 // Bibliothèque : accès libre aux 4 livres, à chaque unité, à ses exercices et à ses cartes.
+import { anchorNav } from '../ui.js';
 import { h, icon, rich, speakBtn, setMode } from '../ui.js';
 import { store } from '../store.js';
 import { BOOKS, bookByKey, unitList, availableCount, loadUnit, unitMeta, getProverbs, cardIds, exerciseIds, cardData } from '../content.js';
-import { renderLesson, runExercises, runCards } from '../components.js';
+import { renderLesson, runExercises, runCards, lessonAnchors } from '../components.js';
 import { markLessonDone, markUnitExercises } from '../session.js';
 import { MASTERED_DAYS } from '../srs.js';
 
@@ -15,7 +16,7 @@ export function libraryView(root, params) {
       const total = b.key === 'proverbs' ? getProverbs().length : unitList(b.key).length;
       const done = b.key === 'proverbs' ? store.state.proverbsIntroduced : unitList(b.key).filter(u => store.state.units[u.id]?.lessonDone).length;
       const avail = b.key === 'proverbs' ? total : availableCount(b.key);
-      const letter = { grammar: 'G', vocab_int: 'V', vocab_adv: 'V+', collocations: 'C', proverbs: '“' }[b.key];
+      const letter = { grammar: 'G', vocab_int: 'V', vocab_adv: 'V+', collocations: 'C', idioms: 'I', idioms_pv: 'I+', proverbs: '“' }[b.key];
       return h('a', { class: `book card reveal ${b.color}`, href: `#/library/${b.key}` },
         h('div', { class: 'book-cover' }, h('span', {}, letter)),
         h('div', { class: 'book-body' },
@@ -37,10 +38,7 @@ function bookView(root, key) {
     if (!groups.length || groups.at(-1).section !== u.section) groups.push({ section: u.section, units: [] });
     groups.at(-1).units.push(u);
   }
-  root.replaceChildren(
-    h('a', { class: 'back', href: '#/library' }, icon('back', 16), 'Bibliothèque'),
-    h('h1', { class: 'page-title' }, b.title), h('p', { class: 'muted' }, b.subtitle),
-    ...groups.map(g => h('section', { class: 'unit-group' },
+  const sections = groups.map(g => h('section', { class: 'unit-group' },
       h('h2', {}, g.section || ''),
       h('div', { class: 'unit-list' }, g.units.map(u => {
         const st = store.state.units[u.id];
@@ -48,7 +46,14 @@ function bookView(root, key) {
         const label = { locked: 'Bientôt', done: st?.total ? `${Math.round((st.right / st.total) * 100)} %` : 'Terminée', started: 'En cours', todo: 'À faire' }[status];
         const inner = [h('span', { class: 'unit-n' }, String(u.n)), h('span', { class: 'unit-t' }, u.title), h('span', { class: `pill ${status}` }, status === 'locked' ? icon('lock', 12) : null, label)];
         return u.available ? h('a', { class: `unit-item ${status}`, href: `#/unit/${u.id}` }, inner) : h('div', { class: 'unit-item locked', title: 'Contenu en préparation' }, inner);
-      })))));
+      }))));
+  // Ancrages vers chaque partie du livre (libellé court + premières unités).
+  const short = t => t.length > 30 ? t.slice(0, 29).replace(/\s+\S*$/, '') + '…' : t;
+  const nav = anchorNav(groups.map((g, i) => [`${short((g.section || 'Partie').replace(/[…:].*$/, '').trim())} (${g.units[0].n}–${g.units.at(-1).n})`, sections[i]]), { label: 'Parties' });
+  root.replaceChildren(
+    h('a', { class: 'back', href: '#/library' }, icon('back', 16), 'Bibliothèque'),
+    h('h1', { class: 'page-title' }, b.title), h('p', { class: 'muted' }, b.subtitle),
+    nav, ...sections);
 }
 
 function proverbsView(root) {
@@ -68,12 +73,21 @@ function proverbsView(root) {
           p.example ? h('p', { class: 'flash-ex' }, speakBtn(p.example), h('span', {}, p.example)) : null));
     }));
   };
-  search.addEventListener('input', draw);
+  // Ancrages par tranches de 25 proverbes (masqués pendant une recherche).
+  const navHolder = h('div', { style: 'display: contents' });
+  const drawNav = () => {
+    navHolder.firstChild?._disconnect?.();
+    const items = [...grid.children];
+    const entries = search.value.trim() ? [] : Array.from({ length: Math.ceil(items.length / 25) }, (_, k) => [`${k * 25 + 1}–${Math.min(items.length, k * 25 + 25)}`, items[k * 25]]);
+    navHolder.replaceChildren(...[anchorNav(entries, { label: 'Proverbes' })].filter(Boolean));
+  };
+  search.addEventListener('input', () => { draw(); drawNav(); });
   root.replaceChildren(h('a', { class: 'back', href: '#/library' }, icon('back', 16), 'Bibliothèque'),
     h('h1', { class: 'page-title' }, '150 Common English Proverbs'),
     h('p', { class: 'muted' }, `La séance du jour en introduit ${store.state.settings.newProverbsPerDay} par jour (réglable). ${store.state.proverbsIntroduced} déjà découverts.`),
-    search, grid);
+    search, navHolder, grid);
   draw();
+  drawNav();
 }
 
 export async function unitView(root, params) {
@@ -103,11 +117,14 @@ export async function unitView(root, params) {
       const c = cardData(id);
       return h('div', { class: 'mini-card' }, c.back.photo ? h('img', { class: 'mini-photo', src: c.back.photo.src, alt: '', loading: 'lazy' }) : c.back.pic ? h('span', { class: 'mini-pic', 'aria-hidden': 'true' }, c.back.pic) : speakBtn(c.back.en), h('div', {}, h('strong', { html: rich(c.front.q || c.back.en) }), h('div', { class: 'muted small', html: rich(c.front.q ? c.back.en : (c.back.fr || '')) })));
     })));
-  root.replaceChildren(back, renderLesson(unit, meta),
-    h('div', { class: 'card lesson-end' },
+  const lesson = renderLesson(unit, meta);
+  const end = h('div', { class: 'card lesson-end' },
       st?.exDone ? h('p', {}, `Dernier score aux exercices : ${st.right} / ${st.total}.`) : h('p', {}, 'Après la lecture, passe aux exercices : c’est la pratique qui fixe la leçon.'),
       h('div', { class: 'row-actions' },
         h('a', { class: 'btn primary', href: `#/unit/${uid}/ex`, onclick: () => markLessonDone(uid) }, icon('pencil', 18), `Exercices (${unit.exercises?.length || 0})`),
-        h('a', { class: 'btn amber', href: `#/unit/${uid}/cards` }, icon('cards', 18), 'Réviser les cartes'))),
-    cards);
+        h('a', { class: 'btn amber', href: `#/unit/${uid}/cards` }, icon('cards', 18), 'Réviser les cartes')));
+  root.replaceChildren(back, lesson, end, cards);
+  // Ancrages (après insertion dans la page) : sections de la leçon, exercices, cartes.
+  const nav = lessonAnchors(lesson, unit, [['Exercices', end], ['Cartes', cards]]);
+  if (nav) lesson.before(nav);
 }

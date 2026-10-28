@@ -3,6 +3,8 @@ import { h, icon, setMode } from '../ui.js';
 import { store } from '../store.js';
 import { runCards, runExercises } from '../components.js';
 import { dueIds, MASTERED_DAYS } from '../srs.js';
+import { buildListening, runListening, studiedUnits } from '../listening.js';
+import { runWriting } from '../writing.js';
 
 export function reviewView(root, params) {
   setMode(null);
@@ -15,6 +17,16 @@ export function reviewView(root, params) {
   if (params[0] === 'ex') {
     root.replaceChildren(holder);
     return runExercises(holder, dueIds(['x:']).slice(0, 30), { title: 'Révision des exercices', subtitle: 'Révisions libres', onFinish: done });
+  }
+  if (params[0] === 'listening' || params[0] === 'speaking') {
+    root.replaceChildren(holder);
+    const speakOnly = params[0] === 'speaking';
+    return buildListening(speakOnly ? { dictation: 0, choice: 0, speaking: 10 } : { dictation: 8, choice: 4, speaking: 0 })
+      .then(items => runListening(holder, items, { title: speakOnly ? 'Prononciation' : 'Écoute et dictée', subtitle: 'Révisions libres', onFinish: done }));
+  }
+  if (params[0] === 'writing') {
+    root.replaceChildren(holder);
+    return runWriting(holder, { onFinish: done });
   }
   if (params[0] === 'mistakes') {
     root.replaceChildren(holder);
@@ -43,7 +55,10 @@ export function reviewView(root, params) {
     h('div', { class: 'grid-3' },
       action('cards', 'Réviser les cartes', `${cardsDue} carte${cardsDue > 1 ? 's' : ''} due${cardsDue > 1 ? 's' : ''}`, '#/review/cards', cardsDue),
       action('pencil', 'Réviser les exercices', `${exDue} exercice${exDue > 1 ? 's' : ''} dû${exDue > 1 ? 's' : ''}`, '#/review/ex', exDue),
-      action('target', 'Mes erreurs fréquentes', 'Retravailler ce qui résiste', '#/review/mistakes', 1)));
+      action('target', 'Mes erreurs fréquentes', 'Retravailler ce qui résiste', '#/review/mistakes', 1),
+      action('sound', 'Écoute et dictée', 'Écrire ce que dit la voix anglaise', '#/review/listening', 1),
+      action('play', 'Prononciation', 'Répéter des phrases au micro (hors ligne)', '#/review/speaking', 1),
+      action('pencil', 'Expression écrite', 'Écrire un texte, corrigé hors ligne', '#/review/writing', 1)));
 }
 
 function action(ic, title, sub, href, n) {

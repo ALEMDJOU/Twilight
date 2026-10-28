@@ -41,6 +41,9 @@ Twilight runs entirely on your own computer: a tiny Node.js server, a SQLite dat
   - **20 % short lessons**, always followed by practice. A lesson recap is shown before each set of exercises.
 - **Interleaving**: grammar, vocabulary and collocation units alternate; review exercises are mixed across units.
 - **Six exercise types**: multiple choice, gap fill, free writing, error correction, word order and matching — with tolerant checking (contractions, punctuation, near-misses).
+- **Listening & speaking, offline**: dictations and "what did you hear?" exercises read by the Piper voice, plus pronunciation practice scored by [Vosk](https://alphacephei.com/vosk/) speech recognition running in the browser.
+- **Free writing with offline grammar correction**: write a short text on a topic and get spelling, agreement and grammar feedback from [Harper](https://github.com/Automattic/harper) (WebAssembly). Wrong answers in writing exercises are analysed the same way.
+- **Daily reminders** (Windows): a scheduled task shows a notification at the time you choose if today's session isn't finished — no internet needed.
 - **Catch-up sessions**: unfinished sessions from the last 14 days can be resumed at any time.
 - **Offline-first**: a Service Worker caches the whole app, the lessons, the photos and the voice. Progress is stored locally and synced to SQLite when the server is back.
 - **Offline text-to-speech** with [Piper](https://github.com/rhasspy/piper) (natural American English voice running in WebAssembly), falling back to the system voices.
@@ -55,7 +58,7 @@ Requirements: **[Node.js](https://nodejs.org) 22.5 or newer** (Twilight uses the
 ```bash
 git clone https://github.com/<your-account>/twilight.git
 cd twilight
-npm run setup     # installs the sample content and downloads the offline voice (~100 MB, once)
+npm run setup     # installs the sample content and downloads the offline engines (~170 MB, once)
 npm start         # → http://localhost:4317
 ```
 
@@ -118,7 +121,7 @@ npm run check     # validates every unit and rebuilds index.json
 |---|---|
 | `npm start` | Start the local server on port 4317 (`PORT` to change it, `--no-open` to skip opening the browser) |
 | `npm run setup` | Install the sample content (if `public/content` is empty) and the offline voice |
-| `npm run setup:voice` | Download the Piper voice and its WebAssembly runtime (checksums verified) |
+| `npm run setup:voice` | Download the offline engines — Piper voice, Vosk speech recognition, Harper grammar checker (checksums verified) |
 | `npm run check` | Validate the units and regenerate `public/content/index.json` |
 | `npm run images` | Download Wikimedia Commons photos for cards that have an `img` field |
 
@@ -140,11 +143,13 @@ twilight/
 │   │   ├── components.js   # lessons, exercises, flashcards
 │   │   ├── check.js        # answer checking
 │   │   ├── tts.js, piper.js# text-to-speech (Piper + system voices)
+│   │   ├── listening.js    # dictation, listening and pronunciation (speech.js = Vosk)
+│   │   ├── writing.js      # free writing, corrected by grammar.js (Harper)
 │   │   └── views/          # dashboard, session, library, review, settings
 │   └── fonts/              # self-hosted fonts (OFL)
 ├── docs/screenshots/       # images used in this README
 ├── samples/content/        # original sample content
-├── tools/                  # content validation, photo and voice download
+├── tools/                  # content validation, downloads, daily reminder (remind.js)
 └── data/                   # your progress (git-ignored)
 ```
 

@@ -1,12 +1,14 @@
 // Service Worker de Twilight : l'application s'ouvre et fonctionne même sans serveur ni internet.
 // Tous les fichiers (code, polices, unités, photos) sont gardés dans le cache du navigateur.
-const CACHE = 'twilight-v10';
+const CACHE = 'twilight-v19';
 // Voix Piper (environ 100 Mo) : gardée dans le cache pour parler sans internet.
-const VOICE = ['ort.wasm.min.js', 'ort-wasm-simd.wasm', 'ort-wasm.wasm', 'piper_phonemize.js', 'piper_phonemize.wasm', 'piper_phonemize.data', 'en_US-lessac-medium.onnx.json', 'en_US-lessac-medium.onnx'].map(f => 'vendor/piper/' + f);
+const VOICE = ['ort.wasm.min.js', 'ort-wasm-simd.wasm', 'ort-wasm.wasm', 'piper_phonemize.js', 'piper_phonemize.wasm', 'piper_phonemize.data', 'en_US-lessac-medium.onnx.json', 'en_US-lessac-medium.onnx'].map(f => 'vendor/piper/' + f)
+  .concat(['vendor/vosk/vosk.js', 'vendor/vosk/vosk-model-small-en-us-0.15.tar.gz'])
+  .concat(['index.js', 'BinaryModule-S5UABkWQ.js', 'slimBinary.js', 'harper_wasm_slim_bg.wasm'].map(f => 'vendor/harper/' + f));
 const SHELL = [
   './', 'index.html', 'favicon.svg', 'css/style.css',
   'js/app.js', 'js/store.js', 'js/srs.js', 'js/content.js', 'js/check.js', 'js/tts.js', 'js/ui.js', 'js/fx.js',
-  'js/components.js', 'js/session.js',
+  'js/components.js', 'js/session.js', 'js/piper.js', 'js/speech.js', 'js/listening.js', 'js/grammar.js', 'js/writing.js', 'js/scenes.js',
   'js/views/dashboard.js', 'js/views/today.js', 'js/views/library.js', 'js/views/review.js', 'js/views/settings.js',
   'fonts/fraunces-latin-wght-normal.woff2', 'fonts/fraunces-latin-ext-wght-normal.woff2', 'fonts/fraunces-latin-wght-italic.woff2',
   'fonts/plus-jakarta-sans-latin-wght-normal.woff2', 'fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2', 'fonts/plus-jakarta-sans-latin-wght-italic.woff2',

@@ -1,11 +1,14 @@
 // Chargement du contenu des livres et accès aux cartes / exercices par identifiant.
 import { store } from './store.js';
+import { sceneFor } from './scenes.js';
 
 export const BOOKS = [
   { key: 'grammar', code: 'g', title: 'English Grammar in Use', subtitle: 'Intermediate · Raymond Murphy', short: 'Grammaire', color: 'burgundy' },
   { key: 'vocab_int', code: 'vi', title: 'English Vocabulary in Use', subtitle: 'Pre-intermediate & Intermediate', short: 'Vocabulaire', color: 'wine' },
   { key: 'vocab_adv', code: 'va', title: 'English Vocabulary in Use', subtitle: 'Advanced', short: 'Vocabulaire avancé', color: 'navy' },
   { key: 'collocations', code: 'co', title: 'English Collocations in Use', subtitle: 'Intermediate · McCarthy & O’Dell', short: 'Collocations', color: 'teal' },
+  { key: 'idioms', code: 'id', title: 'English Idioms in Use', subtitle: 'Intermediate · McCarthy & O’Dell', short: 'Idiomes', color: 'wine' },
+  { key: 'idioms_pv', code: 'ip', title: 'English Idioms & Phrasal Verbs', subtitle: 'The Complete Guide', short: 'Idiomes & phrasal verbs', color: 'navy' },
   { key: 'proverbs', code: 'p', title: '150 Common English Proverbs', subtitle: 'Meanings and examples', short: 'Proverbes', color: 'amber' },
 ];
 export const bookByCode = Object.fromEntries(BOOKS.map(b => [b.code, b]));
@@ -95,10 +98,67 @@ export function cardData(id) {
   if (!c) return null;
   const meta = unitMeta(uid);
   const photo = photoFor(c);
-  const back = { en: c.en, fr: c.fr, def: c.def, ex: c.ex, note: c.note, pic: c.pic, photo };
+  // Collocations et idiomes « humains » sans photo : illustration dessinée par l'app.
+  const scene = !photo && !c.q && ILLUSTRATED.has(meta.book.code) ? sceneFor(`${c.en} ${c.def || ''}`) : null;
+  const back = { en: c.en, fr: c.fr, def: c.def, ex: c.ex, note: c.note, pic: c.pic, photo, scene };
   const source = `${meta.book.short} · Unité ${meta.n}`;
-  if (dir === 'c') return { id, dir, uid, source, front: { kind: c.q ? 'rule' : 'word', en: c.en, q: c.q, pic: c.pic, photo }, back };
-  return { id, dir, uid, source, front: { kind: 'rev', fr: c.fr, def: c.def, hint: c.hint, pic: c.pic, photo }, back };
+  if (dir === 'c') return { id, dir, uid, source, front: { kind: c.q ? 'rule' : 'word', en: c.en, q: c.q, pic: c.pic, photo, scene }, back };
+  return { id, dir, uid, source, front: { kind: 'rev', fr: c.fr, def: c.def, hint: c.hint, pic: c.pic, photo, scene }, back };
+}
+
+// Livres dont les cartes reçoivent des illustrations dessinées.
+export const ILLUSTRATED = new Set(['co', 'id', 'ip']);
+
+/* ---------- Glossaire : traductions françaises des collocations présentes dans un texte ---------- */
+const IRREGULAR = {
+  be: 'be|am|is|are|was|were|been|being', have: 'have|has|had|having', do: 'do|does|did|done|doing', go: 'go|goes|went|gone|going',
+  make: 'make|makes|made|making', take: 'take|takes|took|taken|taking', give: 'give|gives|gave|given|giving', get: 'get|gets|got|gotten|getting',
+  come: 'come|comes|came|coming', keep: 'keep|keeps|kept|keeping', catch: 'catch|catches|caught|catching', break: 'break|breaks|broke|broken|breaking',
+  bring: 'bring|brings|brought|bringing', hold: 'hold|holds|held|holding', run: 'run|runs|ran|running', fall: 'fall|falls|fell|fallen|falling',
+  feel: 'feel|feels|felt|feeling', lose: 'lose|loses|lost|losing', pay: 'pay|pays|paid|paying', tell: 'tell|tells|told|telling', win: 'win|wins|won|winning',
+  throw: 'throw|throws|threw|thrown|throwing', see: 'see|sees|saw|seen|seeing', speak: 'speak|speaks|spoke|spoken|speaking', meet: 'meet|meets|met|meeting',
+  leave: 'leave|leaves|left|leaving', lead: 'lead|leads|led|leading', draw: 'draw|draws|drew|drawn|drawing', rise: 'rise|rises|rose|risen|rising',
+  burst: 'burst|bursts|bursting', put: 'put|puts|putting', set: 'set|sets|setting', cut: 'cut|cuts|cutting', let: 'let|lets|letting', hit: 'hit|hits|hitting',
+  say: 'say|says|said|saying', find: 'find|finds|found|finding', think: 'think|thinks|thought|thinking', buy: 'buy|buys|bought|buying',
+  sell: 'sell|sells|sold|selling', send: 'send|sends|sent|sending', spend: 'spend|spends|spent|spending', stand: 'stand|stands|stood|standing',
+  know: 'know|knows|knew|known|knowing', grow: 'grow|grows|grew|grown|growing', drive: 'drive|drives|drove|driven|driving',
+  write: 'write|writes|wrote|written|writing', eat: 'eat|eats|ate|eaten|eating', drink: 'drink|drinks|drank|drunk|drinking',
+  sleep: 'sleep|sleeps|slept|sleeping', shake: 'shake|shakes|shook|shaken|shaking', bear: 'bear|bears|bore|borne|bearing',
+  tear: 'tear|tears|tore|torn|tearing', wear: 'wear|wears|wore|worn|wearing', hang: 'hang|hangs|hung|hanging', stick: 'stick|sticks|stuck|sticking',
+  strike: 'strike|strikes|struck|striking', blow: 'blow|blows|blew|blown|blowing', fly: 'fly|flies|flew|flown|flying', sink: 'sink|sinks|sank|sunk|sinking',
+  shoot: 'shoot|shoots|shot|shooting', dig: 'dig|digs|dug|digging', bite: 'bite|bites|bit|bitten|biting',
+};
+const PLACEHOLDER = /^(sb|sth|someone|somebody|something|someone's|somebody's|one's|your|yourself|oneself|my|his|her|their|our)$/;
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function tokenRe(tok) {
+  if (PLACEHOLDER.test(tok)) return "[\\w'’]+(?:\\s[\\w'’]+)?";
+  if (IRREGULAR[tok]) return `(?:${IRREGULAR[tok]})`;
+  if (tok.length <= 3) return escRe(tok);
+  return `${escRe(tok.replace(/e$/, ''))}\\w{0,4}`;
+}
+const matchers = new Map();
+function matcherFor(en) {
+  if (matchers.has(en)) return matchers.get(en);
+  const base = en.toLowerCase().replace(/\(.*?\)/g, ' ').replace(/^to /, '').split(/[\/,;]| or /)[0].replace(/[^a-z'’ -]/g, ' ').trim();
+  // Les articles et déterminants ne comptent pas : « make a mistake » reconnaît aussi « made mistakes ».
+  const toks = base.split(/\s+/).filter(t => t && !/^(a|an|the|to|some|any)$/.test(t));
+  const det = '(?:[\\s-]+(?:a|an|the|some|any|my|your|his|her|its|our|their|this|that))?[\\s-]+';
+  const re = toks.length >= 2 ? new RegExp(`\\b${toks.map(tokenRe).join(det)}\\b`, 'i') : null;
+  matchers.set(en, re);
+  return re;
+}
+// Cartes de l'unité dont l'expression apparaît dans les textes donnés (formes conjuguées comprises).
+export function glossaryFor(uid, texts) {
+  const unit = cache.get(uid);
+  if (!unit) return [];
+  const hay = texts.filter(Boolean).join(' \n ').replace(/\*\*|==|~~|\*/g, '');
+  const out = [];
+  for (const c of unit.cards || []) {
+    if (c.q || !c.en || !c.fr) continue;
+    const re = matcherFor(c.en);
+    if (re && re.test(hay) && !out.some(o => o.en === c.en)) out.push({ en: c.en, fr: c.fr });
+  }
+  return out.slice(0, 8);
 }
 
 /* ---------- Exercices ---------- */

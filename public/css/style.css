@@ -586,3 +586,84 @@ input[type=range] { accent-color: var(--plum-ink); width: 230px; }
 .hero-pending { margin-top: 12px; font-size: .9rem; opacity: .95; }
 .hero-pending a { color: inherit; font-weight: 700; text-decoration: underline; }
 .end-praise { font-family: var(--font-display, inherit); font-size: 1.5rem; font-weight: 700; margin: .2rem 0 .6rem; color: var(--amber-ink); }
+
+/* Écoute, dictée et prononciation */
+.listen-actions { display: flex; gap: .6rem; flex-wrap: wrap; margin: .4rem 0 1rem; }
+.listen-actions .btn.playing { box-shadow: 0 0 0 3px var(--amber); }
+.dict-diff { font-size: 1.15rem; line-height: 1.8; margin: .4rem 0; }
+.dict-diff .w-ok { color: var(--green); font-weight: 650; }
+.dict-diff .w-miss { color: var(--red); font-weight: 750; text-decoration: underline wavy; text-underline-offset: 4px; }
+.speak-target { font: 600 1.35rem/1.45 var(--serif); }
+.speak-live { min-height: 1.6em; margin-top: .8rem; font-style: italic; }
+.btn.mic.recording { animation: breathe 1.2s ease-in-out infinite; background: var(--red); color: #fff; }
+
+/* Rappel quotidien */
+.reminder-row { border-top: 1px solid var(--line); padding-top: 1rem; margin-top: .6rem; }
+.reminder-ctl { display: flex; gap: .6rem; align-items: center; margin: .7rem 0 .3rem; flex-wrap: wrap; }
+.time-input { font: 600 1rem var(--sans); padding: .55rem .8rem; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--ink); }
+
+/* Expression écrite et correcteur grammatical */
+.write-prompt { font: 650 1.4rem/1.3 var(--serif); display: block; margin: .2rem 0 .3rem; }
+.write-area { width: 100%; min-height: 180px; resize: vertical; font: 400 1.05rem/1.6 var(--sans); padding: 1rem; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface-2); color: var(--ink); margin-top: .8rem; }
+.write-area:focus { outline: none; border-color: var(--plum-ink); background: var(--surface); }
+.write-words { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .6rem; }
+.write-marked { background: var(--surface-2); border-radius: 14px; padding: .9rem 1rem; line-height: 1.9; margin: .6rem 0; }
+.gram-err { background: var(--red-bg); color: inherit; border-bottom: 2px solid var(--red); padding: 0 .1em; position: relative; }
+.gram-err::after { content: attr(data-n); position: relative; top: -.6em; font-size: .65rem; font-weight: 800; color: var(--red); margin-left: 2px; }
+.gram-list { display: grid; gap: .6rem; padding-left: 1.3rem; margin: .4rem 0 .8rem; }
+.gram-kind { display: inline-block; font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--plum-ink); background: var(--plum-bg); border-radius: 999px; padding: .1rem .5rem; margin-right: .4rem; }
+.gram-sugg { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .35rem; }
+.chip-btn { cursor: pointer; border: 0; }
+.gram-help { margin-top: 1rem; padding: .8rem 1rem; border-radius: 14px; background: var(--surface-2); }
+.gram-help-title { display: flex; gap: .4rem; align-items: center; font-weight: 750; margin-bottom: .3rem; }
+
+/* Variantes de réponse et niveaux de prononciation */
+.write-input.maybe { border-color: var(--amber); background: var(--amber-bg); }
+.variant-box { margin-top: 1.1rem; padding: 1rem 1.1rem; border-radius: 14px; background: var(--amber-bg); border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent); }
+.variant-box .fb-title { color: var(--amber-ink); }
+.variant-box .fb-title .icon { background: var(--amber); }
+.variant-expected { font: 600 1.1rem var(--serif); margin: .1rem 0 .6rem; }
+.dict-diff .w-approx { color: var(--amber-ink); font-weight: 700; text-decoration: underline dotted; text-underline-offset: 4px; }
+.pron-level { font: 700 1.05rem var(--serif); margin: .3rem 0; }
+.pron-level.great { color: var(--green); } .pron-level.good { color: var(--amber-ink); } .pron-level.low { color: var(--red); }
+.speak-tries { display: grid; gap: .6rem; margin-top: .8rem; }
+.speak-try { padding: .7rem .9rem; border-radius: 14px; background: var(--surface-2); animation: rise .35s var(--ease); }
+.speak-try.old { opacity: .55; transform: scale(.98); }
+.speak-try.old .dict-diff { font-size: .95rem; }
+.speak-hint { color: var(--ink-2); margin: 0; }
+
+/* Glossaire français des collocations / idiomes dans les exercices */
+.gloss { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .9rem; padding: .6rem .8rem; border-radius: 12px; background: var(--indigo-bg); font-size: .9rem; }
+.gloss-title { display: inline-flex; align-items: center; gap: .3rem; font-weight: 800; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); margin-right: .2rem; }
+.gloss-item { background: var(--surface); border-radius: 999px; padding: .2rem .65rem; box-shadow: var(--shadow-sm); }
+.gloss-item strong { color: var(--plum-ink); }
+.feedback .gloss { background: var(--surface-2); }
+
+/* Illustrations dessinées (scenes.js) */
+.scene { width: 150px; height: 150px; margin: .2rem auto .6rem; animation: pop .5s var(--spring); }
+.scene svg, .g-scene svg { width: 100%; height: 100%; display: block; }
+.g-scene { width: 84px; height: 84px; display: block; margin: 0 auto .4rem; }
+
+/* Ancrages des pages longues */
+.anchor-nav {
+  position: sticky; top: 66px; z-index: 20;
+  display: flex; align-items: center; gap: .4rem; overflow-x: auto; scrollbar-width: none;
+  margin: .8rem 0 1.1rem; padding: .5rem .6rem; border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  box-shadow: var(--shadow-sm); border: 1px solid var(--line);
+}
+.anchor-nav::-webkit-scrollbar { display: none; }
+.anchor-label { flex: none; font: 800 .7rem var(--sans); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); padding: 0 .3rem; }
+.anchor-chip { flex: none; font: 650 .85rem var(--sans); color: var(--ink-2); background: var(--surface-2); border: 0; border-radius: 999px; padding: .35rem .8rem; cursor: pointer; white-space: nowrap; transition: background .2s, color .2s, transform .2s var(--spring); }
+.anchor-chip:hover { transform: translateY(-1px); color: var(--ink); }
+.anchor-chip.on { background: var(--grad); color: #fff; }
+.anchor-target { scroll-margin-top: 140px; }
+
+/* Bouton « remonter en haut » */
+.to-top { position: fixed; right: 1.4rem; bottom: 1.4rem; z-index: 40; width: 46px; height: 46px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; color: #fff; background: var(--grad); box-shadow: var(--shadow-lg);
+  opacity: 0; pointer-events: none; transform: translateY(12px); transition: opacity .3s, transform .35s var(--spring); }
+.to-top .icon { transform: rotate(-90deg); }
+.to-top.show { opacity: 1; pointer-events: auto; transform: none; }
+@media (max-width: 640px) { .anchor-nav { top: 58px; } }

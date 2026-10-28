@@ -1,7 +1,7 @@
 // Point d'entrée de Twilight : chargement, navigation par #/route.
 import { store, streak } from './store.js';
 import { initContent } from './content.js';
-import { h, icon, setMode, applyTheme, toggleTheme, toast } from './ui.js';
+import { h, icon, setMode, applyTheme, toggleTheme, toast, initBackToTop } from './ui.js';
 import { stagger } from './fx.js';
 import { dashboardView } from './views/dashboard.js';
 import { todayView } from './views/today.js';
@@ -80,6 +80,7 @@ async function start() {
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
   await initContent();
   buildNav();
+  initBackToTop();
   // Bandeau discret quand le serveur est arrêté : on continue hors ligne, la synchro se fera au retour.
   const banner = h('div', { class: 'offline-banner', hidden: true }, 'Mode hors ligne : ta progression est gardée dans ce navigateur et sera synchronisée dès que Twilight (le serveur) sera relancé.');
   document.body.prepend(banner);

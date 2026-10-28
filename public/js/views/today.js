@@ -2,8 +2,9 @@
 import { h, icon, setMode, fmtMin, speakBtn, rich } from '../ui.js';
 import { store, today } from '../store.js';
 import { loadUnit, unitMeta, getProverbs } from '../content.js';
-import { renderLesson, runExercises, runCards } from '../components.js';
+import { renderLesson, runExercises, runCards, lessonAnchors } from '../components.js';
 import { confetti } from '../fx.js';
+import { buildListening, runListening } from '../listening.js';
 import { planFor, dayRecord, pendingDays, stepInfo, markLessonDone, markUnitExercises, warmupCards, unitExercises, reviewExercises, introduceProverbs, remainingCards } from '../session.js';
 
 const fmtDay = k => new Date(k + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -77,10 +78,13 @@ export function todayView(root, params) {
       setMode('lesson');
       const unit = await loadUnit(step.uid);
       const meta = unitMeta(step.uid);
-      main.replaceChildren(h('div', { class: 'eyebrow' }, sub), renderLesson(unit, meta),
+      const lesson = renderLesson(unit, meta);
+      main.replaceChildren(h('div', { class: 'eyebrow' }, sub), lesson,
         h('div', { class: 'lesson-end card' },
           h('p', {}, 'Lis bien chaque partie et écoute les exemples. Ensuite, on passe tout de suite à la pratique : c’est elle qui fixe la leçon.'),
           h('button', { class: 'btn primary', onclick: async () => { await markLessonDone(step.uid); complete(i); } }, 'J’ai lu la leçon — aux exercices', icon('arrow', 18))));
+      const nav = lessonAnchors(lesson, unit, [['Aux exercices', main.querySelector('.lesson-end')]]);
+      if (nav) lesson.before(nav);
     } else if (step.type === 'unit-ex') {
       const ids = await unitExercises(step.uid);
       runExercises(main, ids, { title: info.title, subtitle: sub, onFinish: ({ right, total }) => { markUnitExercises(step.uid, right, total); complete(i); } });
@@ -91,6 +95,10 @@ export function todayView(root, params) {
           h('p', {}, 'Pas encore d’exercices anciens à revoir : ils reviendront dans les prochains jours.'),
           h('button', { class: 'btn primary', onclick: () => complete(i) }, 'Continuer', icon('arrow', 18))));
       } else runExercises(main, ids, { title: info.title, subtitle: sub, onFinish: () => complete(i) });
+    } else if (step.type === 'listening') {
+      main.replaceChildren(h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Préparation des phrases…')));
+      const items = await buildListening();
+      runListening(main, items, { title: info.title, subtitle: sub, onFinish: () => complete(i) });
     } else if (step.type === 'proverbs') {
       setMode('lesson');
       const ids = introduceProverbs(dayRec);

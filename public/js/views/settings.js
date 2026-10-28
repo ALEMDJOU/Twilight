@@ -1,5 +1,5 @@
 // Réglages : temps quotidien, vocabulaire, voix, aide en français, sauvegarde.
-import { h, icon, toast, setMode, applyTheme } from '../ui.js';
+import { h, icon, toast, setMode, applyTheme, anchorNav } from '../ui.js';
 import { store } from '../store.js';
 import { englishVoices, speak, voiceStatus, localVoices, piperReady } from '../tts.js';
 import { resetPlan } from '../session.js';
@@ -44,6 +44,10 @@ export function settingsView(root) {
   if ('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged', fillAll);
   document.addEventListener('voice-change', fillStatus);
 
+  const pron = h('select', { onchange: e => { s.pronunciation = e.target.value; save(); } },
+    [['easy', 'Indulgente — pour débuter'], ['normal', 'Normale'], ['strict', 'Exigeante — chaque mot compte']].map(([v, l]) =>
+      h('option', { value: v, selected: (s.pronunciation || 'normal') === v || null }, l)));
+
   const rate = h('input', { type: 'range', min: 0.6, max: 1.2, step: 0.05, value: s.rate, onchange: e => { s.rate = Number(e.target.value); save(); speak('How fast should I speak?'); } });
 
   const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Thème' }, [['auto', 'Auto'], ['light', 'Clair'], ['dark', 'Sombre']].map(([v, l]) =>
@@ -51,6 +55,39 @@ export function settingsView(root) {
       s.theme = v; applyTheme(); store.save();
       seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === e.currentTarget));
     } }, l)));
+
+  // Rappel quotidien : une tâche Windows affiche une notification si la séance n'est pas faite.
+  const remTime = h('input', { type: 'time', value: s.reminderTime || '19:00', class: 'time-input' });
+  const remSwitch = h('input', { type: 'checkbox' });
+  const remInfo = h('p', { class: 'muted small' }, 'Chargement…');
+  const remTest = h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
+    const r = await fetch('/api/reminder/test', { method: 'POST' }).catch(() => null);
+    toast(r?.ok ? 'Notification envoyée' : 'Impossible d’afficher la notification', r?.ok ? 'ok' : 'err');
+  } }, icon('play', 16), 'Tester');
+  const applyReminder = async () => {
+    s.reminderTime = remTime.value; store.save();
+    try {
+      const r = await fetch('/api/reminder', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: remSwitch.checked, time: remTime.value }) });
+      const st = await r.json();
+      if (!r.ok) throw new Error(st.error);
+      showReminder(st);
+      toast(st.enabled ? `Rappel programmé chaque jour à ${st.time}` : 'Rappel désactivé', 'ok');
+    } catch { toast('Réglage du rappel impossible', 'err'); remInfo.textContent = 'Le serveur Twilight doit être lancé pour régler le rappel.'; }
+  };
+  const showReminder = st => {
+    if (!st.supported) { remSwitch.disabled = true; remTime.disabled = true; remInfo.textContent = 'Les rappels automatiques sont disponibles sous Windows.'; return; }
+    remSwitch.checked = !!st.enabled;
+    if (st.time) remTime.value = st.time;
+    remInfo.textContent = st.enabled
+      ? `Chaque jour à ${st.time}, Windows t’envoie une notification si ta séance n’est pas terminée (même sans internet, même si Twilight est fermé).`
+      : 'Désactivé. Active-le pour recevoir une notification chaque jour.';
+  };
+  remSwitch.onchange = applyReminder;
+  remTime.onchange = () => { if (remSwitch.checked) applyReminder(); };
+  fetch('/api/reminder').then(r => r.json()).then(showReminder).catch(() => { remInfo.textContent = 'Le serveur Twilight doit être lancé pour régler le rappel.'; });
+  const reminderRow = h('div', { class: 'reminder-row' },
+    h('label', { class: 'toggle' }, remSwitch, h('span', { class: 'switch' }), h('span', {}, h('strong', {}, 'Rappel quotidien'), h('small', { class: 'muted' }, 'Notification Windows à l’heure choisie.'))),
+    h('div', { class: 'reminder-ctl' }, remTime, remTest), remInfo);
 
   const toggle = (key, label, desc) => h('label', { class: 'toggle' },
     h('input', { type: 'checkbox', checked: s[key] || null, onchange: e => { s[key] = e.target.checked; save(); } }),
@@ -80,7 +117,8 @@ export function settingsView(root) {
       h('h2', {}, icon('clock', 18), 'Séance'),
       row('Temps d’étude par jour', 'La séance se répartit en 40 % cartes, 40 % exercices, 20 % leçons.', minutes),
       row('Parcours de vocabulaire', 'Ordre dans lequel les livres de vocabulaire sont étudiés.', track),
-      row('Nouveaux proverbes par jour', '150 proverbes au total.', prov)),
+      row('Nouveaux proverbes par jour', '150 proverbes au total.', prov),
+      reminderRow),
     h('section', { class: 'card settings reveal' },
       h('h2', {}, icon('sun', 18), 'Apparence'),
       row('Thème', 'Auto suit le réglage de Windows.', seg)),
@@ -90,6 +128,7 @@ export function settingsView(root) {
       row('Voix Windows (secours)', 'Utilisée si Piper est désactivé ou indisponible.', voiceSel),
       voiceInfo,
       row('Vitesse de lecture', 'Plus lent pour mieux entendre.', rate),
+      row('Sévérité de la prononciation', 'Niveau d’exigence des exercices au micro (reconnaissance vocale hors ligne).', pron),
       toggle('autoSpeak', 'Lecture automatique', 'Lit la bonne réponse et le dos des cartes à voix haute.'),
       toggle('showFr', 'Aide en français ouverte', 'Affiche directement les explications en français (sinon, un clic suffit).')),
     h('section', { class: 'card settings' },
@@ -98,6 +137,10 @@ export function settingsView(root) {
         ? 'Ta progression est enregistrée automatiquement dans la base SQLite Twilight/data/twilight.db, avec une copie par jour dans data/backups.'
         : 'Serveur introuvable : la progression est gardée dans ce navigateur seulement. Lance Twilight avec « Lancer Twilight.bat ».'),
       h('div', { class: 'row-actions' }, exportBtn, importBtn, file, resetBtn)));
+  // Ancrages vers chaque bloc de réglages.
+  const blocks = [...root.querySelectorAll('section.settings')];
+  const nav = anchorNav(blocks.map(b => [b.querySelector('h2')?.textContent.trim() || 'Réglages', b]), { label: 'Réglages' });
+  if (nav) root.querySelector('.page-title').after(nav);
 }
 
 function row(label, desc, control) {

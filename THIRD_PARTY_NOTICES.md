@@ -17,6 +17,9 @@ It bundles or downloads the following third-party components, each under its own
 | [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) 1.18.0 | `npm run setup:voice` | MIT |
 | [piper-wasm / vits-web](https://github.com/diffusionstudio/vits-web) (Piper phonemizer compiled to WebAssembly) | `npm run setup:voice` | MIT, includes [eSpeak NG](https://github.com/espeak-ng/espeak-ng) (GPL-3.0-or-later) |
 | [Piper](https://github.com/rhasspy/piper) voice `en_US-lessac-medium` | `npm run setup:voice` | See the voice's [model card](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/lessac/medium) |
+| [vosk-browser](https://github.com/ccoreilly/vosk-browser) 0.0.8 (speech recognition in WebAssembly) | `npm run setup:voice` | Apache-2.0 |
+| [Vosk](https://alphacephei.com/vosk/) model `vosk-model-small-en-us-0.15` | `npm run setup:voice` | Apache-2.0 |
+| [Harper](https://github.com/Automattic/harper) / harper.js 2.13.0 (English grammar checker in WebAssembly) | `npm run setup:voice` | Apache-2.0 |
 | Photos from [Wikimedia Commons](https://commons.wikimedia.org) | `npm run images` | Various free licenses (CC BY, CC BY-SA, public domain…). The author, license and source of every photo are stored in `public/content/images.json` and shown under each picture in the app. |
 
 ## Learning content

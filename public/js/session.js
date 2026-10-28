@@ -17,7 +17,7 @@ export function budgets() {
 // Le créneau « vocabulaire » alterne entre le vocabulaire et les collocations (deux livres complémentaires).
 function vocabBook(i) {
   const track = store.state.settings.vocabTrack;
-  const cycle = track === 'parallel' ? ['vocab_int', 'collocations', 'vocab_adv'] : ['vocab_int', 'collocations'];
+  const cycle = track === 'parallel' ? ['vocab_int', 'collocations', 'idioms', 'vocab_adv', 'idioms_pv'] : ['vocab_int', 'collocations', 'idioms', 'idioms_pv'];
   return cycle[i % cycle.length];
 }
 
@@ -48,8 +48,8 @@ function pickUnits(count) {
     const wantGrammar = i % 2 === 0;
     const ex = [...picked, ...reserved];
     let u = wantGrammar ? nextUnit('grammar', ex) : nextUnit(vocabBook(v++), ex);
-    if (!u && !wantGrammar) u = nextUnit('vocab_int', ex) || nextUnit('collocations', ex) || nextUnit('vocab_adv', ex);
-    if (!u) u = nextUnit('grammar', ex) || nextUnit('vocab_int', ex) || nextUnit('collocations', ex) || nextUnit('vocab_adv', ex);
+    if (!u && !wantGrammar) u = nextUnit('vocab_int', ex) || nextUnit('collocations', ex) || nextUnit('idioms', ex) || nextUnit('idioms_pv', ex) || nextUnit('vocab_adv', ex);
+    if (!u) u = nextUnit('grammar', ex) || nextUnit('vocab_int', ex) || nextUnit('collocations', ex) || nextUnit('idioms', ex) || nextUnit('idioms_pv', ex) || nextUnit('vocab_adv', ex);
     if (!u) break;
     picked.push(u.id);
   }
@@ -67,7 +67,7 @@ export function getPlan() {
   if (d.plan && d.plan.minutes === store.state.settings.minutesPerDay) {
     // Recalcule si de nouvelles unités sont arrivées et qu'aucune leçon du jour n'a commencé.
     const started = d.plan.steps.some(s => s.done && s.type !== 'warmup');
-    if (started || d.plan.units.length >= nUnits || pickUnits(nUnits).length <= d.plan.units.length) return d.plan;
+    if (started || d.plan.units.length >= nUnits || pickUnits(nUnits).length <= d.plan.units.length) return withListening(d.plan);
   }
   const warmDone = d.plan?.steps?.[0]?.done || false;
   const units = pickUnits(nUnits);
@@ -77,11 +77,22 @@ export function getPlan() {
     steps.push({ type: 'unit-ex', uid, done: false });
   }
   steps.push({ type: 'review-ex', done: false });
+  steps.push({ type: 'listening', done: false });
   steps.push({ type: 'proverbs', done: false });
   steps.push({ type: 'cards', done: false });
   d.plan = { minutes: store.state.settings.minutesPerDay, units, steps, created: Date.now() };
   store.save();
   return d.plan;
+}
+
+// Les séances créées avant l'ajout de l'écoute reçoivent l'étape juste avant les proverbes.
+function withListening(plan) {
+  if (!plan.steps.some(s => s.type === 'listening') && !plan.steps.every(s => s.done)) {
+    const at = plan.steps.findIndex(s => s.type === 'proverbs');
+    plan.steps.splice(at < 0 ? plan.steps.length : at, 0, { type: 'listening', done: false });
+    store.save();
+  }
+  return plan;
 }
 
 export function resetPlan() { today().plan = null; return getPlan(); }
@@ -92,6 +103,7 @@ export function stepInfo(step) {
     case 'lesson': { const m = unitMeta(step.uid); return { title: `Leçon — ${m.title}`, desc: `${m.book.short} · Unité ${m.n}`, method: 'lesson', icon: 'book' }; }
     case 'unit-ex': { const m = unitMeta(step.uid); return { title: `Exercices — ${m.title}`, desc: `Pratique immédiate de l’unité ${m.n}`, method: 'exercise', icon: 'pencil' }; }
     case 'review-ex': return { title: 'Révision mélangée', desc: 'Exercices des unités passées, mélangés pour mieux retenir.', method: 'exercise', icon: 'target' };
+    case 'listening': return { title: 'Écoute et prononciation', desc: 'Dictées, compréhension et phrases à répéter à voix haute.', method: 'exercise', icon: 'sound' };
     case 'proverbs': return { title: 'Proverbes du jour', desc: `${store.state.settings.newProverbsPerDay} nouveaux proverbes à découvrir.`, method: 'cards', icon: 'quote' };
     case 'cards': return { title: 'Flashcards', desc: 'Nouvelles cartes des leçons du jour et révisions restantes.', method: 'cards', icon: 'cards' };
   }

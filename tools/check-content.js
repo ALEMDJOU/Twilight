@@ -6,7 +6,7 @@ const path = require('path');
 const DIR = path.join(__dirname, '..', 'public', 'content');
 const UNITS = path.join(DIR, 'units');
 const catalog = JSON.parse(fs.readFileSync(path.join(DIR, 'catalog.json'), 'utf8'));
-const CODES = { g: 'grammar', vi: 'vocab_int', va: 'vocab_adv', co: 'collocations' };
+const CODES = { g: 'grammar', vi: 'vocab_int', va: 'vocab_adv', co: 'collocations', id: 'idioms', ip: 'idioms_pv' };
 const TYPES = new Set(['mcq', 'gap', 'write', 'fix', 'order', 'match']);
 
 let errors = 0;
@@ -16,7 +16,7 @@ let cards = 0, exercises = 0;
 
 for (const f of fs.readdirSync(UNITS).filter(f => f.endsWith('.json')).sort()) {
   const id = f.replace('.json', '');
-  const m = id.match(/^(g|vi|va|co)(\d+)$/);
+  const m = id.match(/^(g|vi|va|co|id|ip)(\d+)$/);
   if (!m) { err(f, 'nom de fichier invalide'); continue; }
   let u;
   try { u = JSON.parse(fs.readFileSync(path.join(UNITS, f), 'utf8')); } catch (e) { err(f, 'JSON invalide : ' + e.message); continue; }
@@ -53,9 +53,9 @@ for (const f of fs.readdirSync(UNITS).filter(f => f.endsWith('.json')).sort()) {
   if (errors === before) { ok.push(id); cards += u.cards.length; exercises += u.exercises.length; }
 }
 
-const order = id => { const m = id.match(/^(g|vi|va|co)(\d+)$/); return ['g', 'vi', 'va', 'co'].indexOf(m[1]) * 1000 + Number(m[2]); };
+const order = id => { const m = id.match(/^(g|vi|va|co|id|ip)(\d+)$/); return ['g', 'vi', 'va', 'co', 'id', 'ip'].indexOf(m[1]) * 1000 + Number(m[2]); };
 ok.sort((a, b) => order(a) - order(b));
 fs.writeFileSync(path.join(DIR, 'index.json'), JSON.stringify({ units: ok, updated: new Date().toISOString() }, null, 1));
 console.log(`${ok.length} unités valides (${exercises} exercices, ${cards} cartes) → index.json`);
-console.log(`  grammaire : ${ok.filter(x => x.startsWith('g')).length}, vocabulaire : ${ok.filter(x => x.startsWith('vi')).length}, avancé : ${ok.filter(x => x.startsWith('va')).length}, collocations : ${ok.filter(x => x.startsWith('co')).length}`);
+console.log(`  grammaire : ${ok.filter(x => x.startsWith('g')).length}, vocabulaire : ${ok.filter(x => x.startsWith('vi')).length}, avancé : ${ok.filter(x => x.startsWith('va')).length}, collocations : ${ok.filter(x => x.startsWith('co')).length}, idiomes : ${ok.filter(x => x.startsWith('id')).length}, idiomes & phrasal verbs : ${ok.filter(x => x.startsWith('ip')).length}`);
 if (errors) { console.error(`${errors} erreur(s).`); process.exit(1); }

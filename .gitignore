@@ -15,8 +15,8 @@ public/content/
 # Photos téléchargées depuis Wikimedia Commons (npm run images)
 public/img/
 
-# Voix Piper (~100 Mo, npm run setup:voice)
-public/vendor/piper/
+# Voix Piper et reconnaissance vocale Vosk (~150 Mo, npm run setup:voice)
+public/vendor/
 
 # Données personnelles : progression SQLite et sauvegardes
 data/

@@ -117,3 +117,9 @@ export async function piperSpeak(text, rate, onEnd) {
   current = src;
   src.start();
 }
+
+// Synthèse sans lecture (sert aussi à tester la reconnaissance vocale).
+export async function piperSynth(text, rate = 1) {
+  await piperLoad();
+  return synth(text, rate);
+}

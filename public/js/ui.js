@@ -141,3 +141,50 @@ setInterval(() => {
   if (today().time[mode] % 15 === 0) store.save();
   document.dispatchEvent(new CustomEvent('tick'));
 }, 1000);
+
+// Ancrages des pages longues : barre collante de raccourcis vers les sections, avec la section en cours
+// mise en évidence. On défile en JavaScript (le « # » de l'adresse sert déjà au routeur de l'application).
+// entries : [[libellé, élément], …]
+export function anchorNav(entries, { label = 'Aller à' } = {}) {
+  const list = entries.filter(([, el]) => el);
+  if (list.length < 3) return null;
+  const nav = h('nav', { class: 'anchor-nav', 'aria-label': label });
+  let lock = 0;
+  // Allume un ancrage et le fait défiler horizontalement dans la barre (sans toucher au défilement de la page).
+  const setOn = k => btns.forEach((b, i) => {
+    b.classList.toggle('on', i === k);
+    if (i === k && (b.offsetLeft < nav.scrollLeft || b.offsetLeft + b.offsetWidth > nav.scrollLeft + nav.clientWidth)) nav.scrollTo({ left: b.offsetLeft - 60, behavior: 'smooth' });
+  });
+  const btns = list.map(([text, el], i) => {
+    el.classList.add('anchor-target');
+    return h('button', { type: 'button', class: 'anchor-chip', onclick: () => { lock = Date.now() + 1000; setOn(i); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, text);
+  });
+  nav.append(h('span', { class: 'anchor-label' }, label), ...btns);
+  // Met en évidence la section en cours : la dernière dont le haut est passé sous la barre ;
+  // en bas de page, la dernière visible (les dernières sections, courtes, n'atteignent jamais le haut).
+  let raf = 0;
+  const update = () => {
+    raf = 0;
+    if (!nav.isConnected) { if (nav._done) removeEventListener('scroll', onScroll); return; }
+    nav._done = true;
+    if (Date.now() < lock) return;
+    const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
+    let k = 0;
+    list.forEach(([, el], i) => { const t = el.getBoundingClientRect().top; if (t <= 150 || (atEnd && t < innerHeight - 80)) k = i; });
+    setOn(k);
+  };
+  const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+  addEventListener('scroll', onScroll, { passive: true });
+  requestAnimationFrame(update);
+  nav._disconnect = () => removeEventListener('scroll', onScroll);
+  return nav;
+}
+
+// Bouton « remonter en haut », affiché quand on a défilé loin.
+export function initBackToTop() {
+  const btn = h('button', { class: 'to-top', type: 'button', title: 'Remonter en haut', 'aria-label': 'Remonter en haut', onclick: () => window.scrollTo({ top: 0, behavior: 'smooth' }) }, icon('arrow', 18));
+  document.body.append(btn);
+  const update = () => btn.classList.toggle('show', window.scrollY > 900);
+  addEventListener('scroll', update, { passive: true });
+  update();
+}

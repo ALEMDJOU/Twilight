@@ -1,9 +1,10 @@
 // Composants d'apprentissage : leçon, série d'exercices, série de flashcards.
-import { h, rich, icon, speakBtn, toast, setMode } from './ui.js';
+import { h, rich, icon, speakBtn, toast, setMode, anchorNav } from './ui.js';
 import { store, today } from './store.js';
 import { isCorrect, isNearMiss, normalize } from './check.js';
 import { grade, gradeExercise, preview, addItem, getItem, intervalLabel, AGAIN, HARD, GOOD, EASY } from './srs.js';
-import { cardData, exerciseData, unitCached, unitMeta, photoFor } from './content.js';
+import { cardData, exerciseData, unitCached, unitMeta, photoFor, glossaryFor, ILLUSTRATED } from './content.js';
+import { sceneFor, sceneSVG } from './scenes.js';
 import { speak } from './tts.js';
 import { confetti, pulse } from './fx.js';
 
@@ -17,6 +18,19 @@ function frBlock(text, label = 'Aide en français') {
 }
 
 /* ======================= Leçon ======================= */
+// Barre d'ancrages d'une leçon rendue par renderLesson (+ éléments supplémentaires : cartes, exercices…).
+export function lessonAnchors(lessonEl, unit, extra = []) {
+  const secs = [...lessonEl.querySelectorAll('.lesson-sec')];
+  const short = t => (t || '').length > 26 ? t.slice(0, 24).trim() + '…' : t;
+  const entries = secs.map((el, i) => {
+    const s = unit.sections?.[i] || {};
+    return [s.id ? `${s.id} · ${short(s.title)}` : short(s.title) || `Partie ${i + 1}`, el];
+  });
+  entries.push(['Images', lessonEl.querySelector('.gallery')?.closest('section')]);
+  entries.push(['À retenir', lessonEl.querySelector('.remember')]);
+  return anchorNav([...entries, ...extra], { label: 'Leçon' });
+}
+
 export function renderLesson(unit, meta) {
   const wrap = h('article', { class: 'lesson' });
   wrap.append(h('header', { class: 'lesson-head' },
@@ -64,13 +78,31 @@ export function photoEl(p, small = false) {
 }
 
 // Galerie « Vocabulaire en images » à la fin des leçons de vocabulaire.
+const BOOK_CODES = { grammar: 'g', vocab_int: 'vi', vocab_adv: 'va', collocations: 'co', idioms: 'id', idioms_pv: 'ip' };
+
 function gallery(unit) {
-  const items = (unit.cards || []).map(c => ({ c, p: photoFor(c) })).filter(x => x.p || x.c.pic);
+  const drawn = ILLUSTRATED.has(BOOK_CODES[unit.book]);
+  const items = (unit.cards || []).filter(c => !c.q).map(c => {
+    const p = photoFor(c);
+    return { c, p, s: drawn && !p ? sceneFor(`${c.en} ${c.def || ''}`) : null };
+  }).filter(x => x.p || x.s || x.c.pic);
   if (items.length < 3) return null;
-  return h('section', { class: 'card' }, h('h2', {}, icon('star', 18), 'Vocabulaire en images'),
-    h('div', { class: 'gallery' }, items.map(({ c, p }) => h('button', { class: 'g-item', type: 'button', onclick: () => speak(c.en) },
-      p ? h('img', { src: p.src, alt: '', loading: 'lazy', title: '© ' + p.credit }) : h('span', { class: 'g-pic' }, c.pic),
+  return h('section', { class: 'card' }, h('h2', {}, icon('star', 18), drawn ? 'Expressions en images' : 'Vocabulaire en images'),
+    h('div', { class: 'gallery' }, items.map(({ c, p, s }) => h('button', { class: 'g-item', type: 'button', onclick: () => speak(c.en) },
+      p ? h('img', { src: p.src, alt: '', loading: 'lazy', title: '© ' + p.credit })
+        : s ? h('span', { class: 'g-scene', html: sceneSVG(s) }) : h('span', { class: 'g-pic' }, c.pic),
       h('strong', {}, c.en), h('small', {}, c.fr)))));
+}
+
+// Petit glossaire français des collocations / idiomes présents dans le texte d'un exercice.
+function glossBox(uid, texts, title = 'Vocabulaire', extra = []) {
+  if (!ILLUSTRATED.has(unitMeta(uid)?.book?.code)) return null;
+  // Traductions écrites pour l'exercice (champ gloss) + celles trouvées automatiquement dans les cartes.
+  const g = (extra || []).map(([en, fr]) => ({ en, fr }));
+  for (const x of glossaryFor(uid, texts)) if (!g.some(y => y.en.toLowerCase() === x.en.toLowerCase())) g.push(x);
+  if (!g.length) return null;
+  return h('div', { class: 'gloss' }, h('span', { class: 'gloss-title' }, icon('book', 14), title),
+    ...g.map(x => h('span', { class: 'gloss-item' }, h('strong', {}, x.en), ' — ', x.fr)));
 }
 
 function renderTable(t) {
@@ -221,6 +253,7 @@ export function renderExercise(ex, retry, onResult, onNext) {
       !ok || near ? correctAnswer(ex) : null,
       sentence ? h('div', { class: 'fb-sentence' }, speakBtn(sentence), h('span', { html: rich(sentence) })) : null,
       ex.why ? h('div', { class: 'fb-why', html: rich(ex.why) }) : null,
+      glossBox(ex.uid, [sentence, ...normAnswers(ex).map(x => x[0]), ex.t === 'mcq' ? ex.o[ex.a] : null, ex.why], 'Traductions'),
       ex.fr ? frBlock(ex.fr, 'Explication en français') : null);
     const nextBtn = h('button', { class: 'btn primary', onclick: onNext }, 'Suivant', icon('arrow', 18));
     actions.replaceChildren(nextBtn);
@@ -280,12 +313,42 @@ export function renderExercise(ex, retry, onResult, onNext) {
     const inp = h('input', { class: 'write-input', type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: ex.t === 'fix' ? 'Écris la phrase corrigée…' : 'Écris ta réponse…' });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); check(); } });
     body.append(inp);
-    const acc = normAnswers(ex)[0];
-    const check = () => {
-      if (answered || !inp.value.trim()) return;
+    // Réponses acceptées : celles du livre + les variantes que tu as validées toi-même.
+    const variants = (store.state.settings.acceptedVariants ||= {});
+    const acc = [...normAnswers(ex)[0], ...(variants[ex.id] || [])];
+    let checking = false;
+    const check = async () => {
+      if (answered || checking || !inp.value.trim()) return;
       const good = isCorrect(inp.value, acc), almost = !good && ex.t !== 'fix' && isNearMiss(inp.value, acc);
-      inp.classList.add(good || almost ? 'right' : 'wrong'); inp.disabled = true;
-      conclude(good || almost, almost);
+      if (good || almost) { inp.classList.add('right'); inp.disabled = true; return conclude(true, almost); }
+      // Pas dans la liste : si la phrase est grammaticalement juste et très proche d'une réponse attendue,
+      // c'est peut-être une variante correcte — c'est toi qui tranches.
+      inp.disabled = true; checking = true;
+      const v = await variantCheck(inp.value, acc);
+      checking = false;
+      if (v) {
+        inp.classList.add('maybe');
+        feedback.replaceChildren(h('div', { class: 'variant-box' },
+          h('div', { class: 'fb-title' }, icon('bulb', 20), 'Variante possible'),
+          h('p', {}, 'Ta phrase n’est pas dans les réponses du livre, mais elle est proche de la réponse attendue et le correcteur n’y trouve aucune faute.'),
+          h('p', { class: 'small muted' }, 'Réponse attendue :'), h('p', { class: 'variant-expected', html: rich(v.best) }),
+          h('p', { class: 'small muted' }, 'Le sens et le temps sont-ils les mêmes ?'),
+          h('div', { class: 'row-actions' },
+            h('button', { class: 'btn primary', type: 'button', onclick: () => {
+              (variants[ex.id] ||= []).push(inp.value.trim()); store.save();
+              inp.classList.remove('maybe'); inp.classList.add('right'); feedback.replaceChildren(); conclude(true, false);
+              feedback.prepend(h('p', { class: 'small muted' }, 'Variante enregistrée : elle sera acceptée la prochaine fois.'));
+            } }, icon('check', 18), 'Oui, ma réponse est correcte'),
+            h('button', { class: 'btn ghost', type: 'button', onclick: () => {
+              inp.classList.remove('maybe'); inp.classList.add('wrong'); feedback.replaceChildren(); conclude(false, false);
+            } }, 'Non, je me suis trompé'))));
+        actions.replaceChildren();
+        return;
+      }
+      inp.classList.add('wrong');
+      conclude(false, false);
+      // Réponse fausse : le correcteur hors ligne explique les fautes de grammaire de TA phrase.
+      if (inp.value.trim().split(/\s+/).length >= 3) grammarHelp(inp.value, feedback);
     };
     actions.append(h('button', { class: 'btn primary', onclick: check }, 'Vérifier'));
     setTimeout(() => inp.focus(), 30);
@@ -331,7 +394,9 @@ export function renderExercise(ex, retry, onResult, onNext) {
     actions.append(h('button', { class: 'btn primary', onclick: check }, 'Vérifier'));
   }
 
-  box.append(body, feedback, actions);
+  // Avant de répondre : traductions des expressions déjà visibles (consigne, options, paires) — jamais la réponse cachée.
+  const visible = [ex.q, ex.ctx, ...(ex.t === 'mcq' ? ex.o : []), ...(ex.t === 'match' ? ex.pairs.flat() : [])];
+  box.append(body, glossBox(ex.uid, visible, 'Vocabulaire', ex.gloss), feedback, actions);
   return box;
 }
 
@@ -356,11 +421,51 @@ const COMBO = { 3: 'Three in a row! You’re on fire!', 5: 'Five in a row! Unsto
 const COMFORT = ['Not quite — you’ll get it next time!', 'Almost! Mistakes help you learn.', 'Don’t give up, you’re learning!', 'Good try! Look at the answer below.', 'Keep going, you can do it!'];
 const pick = a => a[Math.floor(Math.random() * a.length)];
 let combo = 0;
-function pickPraise() {
+// Proximité mot à mot entre la réponse donnée et la plus proche des réponses attendues (0 à 1),
+// mesurée dans les deux sens pour pénaliser aussi bien les mots manquants que les mots en trop.
+function closeness(given, answer) {
+  const w = s => normalize(s).replace(/[,.!?;:"]/g, ' ').split(/\s+/).filter(Boolean);
+  const a = w(answer), b = w(given);
+  if (!a.length || !b.length) return 0;
+  const dp = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--)
+    dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  return (2 * dp[0][0]) / (a.length + b.length);
+}
+
+async function variantCheck(given, answers) {
+  if (given.trim().split(/\s+/).length < 3) return null;
+  let best = null, score = 0;
+  for (const a of answers) { const c = closeness(given, a); if (c > score) { score = c; best = a; } }
+  if (score < 0.75) return null;
+  try {
+    const { checkText } = await import('./grammar.js');
+    const issues = await checkText(given);
+    return issues.length ? null : { best, score };
+  } catch { return null; }
+}
+
+// Analyse grammaticale (Harper, hors ligne) d'une réponse écrite fausse.
+async function grammarHelp(text, feedback) {
+  const box = h('div', { class: 'gram-help' }, h('p', { class: 'muted small' }, 'Analyse de ta phrase…'));
+  feedback.append(box);
+  try {
+    const { checkText } = await import('./grammar.js');
+    const issues = await checkText(text);
+    box.replaceChildren(h('div', { class: 'gram-help-title' }, icon('pencil', 16), 'Analyse de ta phrase'),
+      issues.length
+        ? h('ul', { class: 'gram-list' }, issues.map(it => h('li', {}, h('span', { class: 'gram-kind' }, it.kindFr),
+            h('strong', {}, `« ${it.text} » `), h('span', {}, it.message),
+            it.suggestions.length ? h('span', { class: 'muted' }, ` → ${it.suggestions.filter(Boolean).join(' / ')}`) : null)))
+        : h('p', { class: 'small muted' }, 'Aucune faute de grammaire détectée dans ta phrase : le problème vient plutôt du sens, du temps ou du mot choisi. Compare-la avec la réponse attendue.'));
+  } catch { box.remove(); }
+}
+
+export function pickPraise() {
   combo++;
   return COMBO[combo] || (combo > 15 && combo % 5 === 0 ? `${combo} in a row! Legendary!` : pick(PRAISE));
 }
-function pickComfort() { combo = 0; return pick(COMFORT); }
+export function pickComfort() { combo = 0; return pick(COMFORT); }
 // Fin de série : message selon le score.
 export function endPraise(pct) {
   if (pct === 100) return pick(['Flawless! You are worth it!', 'Perfect score! Incredible!', '100 %! Well deserved!']);
@@ -373,15 +478,19 @@ function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const
 
 /* ======================= Flashcards ======================= */
 // Révision active : on essaie de se souvenir AVANT de retourner la carte, puis on s'auto-évalue.
-export function runCards(root, ids, { title = 'Flashcards', subtitle = '', onFinish, emptyText } = {}) {
+// Les cartes se révisent par petites séances de 50 au maximum : au-delà, on propose une nouvelle petite séance.
+export const CARDS_PER_SESSION = 50;
+
+export function runCards(root, allIds, { title = 'Flashcards', subtitle = '', onFinish, emptyText, part = 1 } = {}) {
   setMode('cards');
+  const ids = allIds.slice(0, CARDS_PER_SESSION), rest = allIds.slice(CARDS_PER_SESSION);
   const queue = [...ids];
   const seen = new Set();
   let count = 0;
   const total = ids.length;
 
   const head = h('div', { class: 'runner-head' },
-    h('div', {}, h('div', { class: 'eyebrow' }, subtitle), h('h2', {}, title)),
+    h('div', {}, h('div', { class: 'eyebrow' }, allIds.length > CARDS_PER_SESSION || part > 1 ? `${subtitle}${subtitle ? ' · ' : ''}petite séance ${part}` : subtitle), h('h2', {}, title)),
     h('div', { class: 'runner-count' }));
   const bar = h('div', { class: 'progress amber' }, h('span'));
   const stage = h('div', { class: 'stage' });
@@ -420,9 +529,14 @@ export function runCards(root, ids, { title = 'Flashcards', subtitle = '', onFin
     bar.firstChild.style.width = '100%';
     stage.replaceChildren(h('div', { class: 'card done-card' },
       h('div', { class: 'big-score good' }, icon('check', 36)),
-      h('p', {}, `${seen.size} carte${seen.size > 1 ? 's' : ''} révisée${seen.size > 1 ? 's' : ''}.`),
-      h('p', { class: 'muted' }, 'Chaque carte reviendra juste avant que tu ne l’oublies.'),
-      onFinish ? h('button', { class: 'btn primary', onclick: () => onFinish({ count }) }, 'Continuer', icon('arrow', 18)) : null));
+      h('p', {}, `${seen.size} carte${seen.size > 1 ? 's' : ''} révisée${seen.size > 1 ? 's' : ''}${rest.length ? ' : petite séance terminée !' : '.'}`),
+      h('p', { class: 'muted' }, rest.length
+        ? `Il reste ${rest.length} carte${rest.length > 1 ? 's' : ''}. Fais une pause si tu veux : elles t’attendront.`
+        : 'Chaque carte reviendra juste avant que tu ne l’oublies.'),
+      h('div', { class: 'row-actions' },
+        rest.length ? h('button', { class: 'btn amber', onclick: () => runCards(root, rest, { title, subtitle, onFinish, emptyText, part: part + 1 }) },
+          icon('cards', 18), `Nouvelle petite séance (${Math.min(rest.length, CARDS_PER_SESSION)} cartes)`) : null,
+        onFinish ? h('button', { class: rest.length ? 'btn ghost' : 'btn primary', onclick: () => onFinish({ count }) }, rest.length ? 'Plus tard, continuer' : 'Continuer', icon('arrow', 18)) : null)));
   }
   next();
 }
@@ -433,6 +547,7 @@ function renderCard(c, onGrade) {
   const f = c.front;
   front.append(h('div', { class: 'ex-source' }, c.source + (c.dir === 'r' ? ' · production' : '')));
   if (f.photo) front.append(photoEl(f.photo));
+  else if (f.scene) front.append(h('div', { class: 'scene', html: sceneSVG(f.scene) }));
   else if (f.pic) front.append(h('div', { class: 'flash-pic', 'aria-hidden': 'true' }, f.pic));
   if (f.kind === 'rev' || f.kind === 'proverb-rev') {
     front.append(h('p', { class: 'flash-prompt' }, f.kind === 'proverb-rev' ? 'Quel est le proverbe anglais ?' : 'Comment dit-on en anglais ?'));
