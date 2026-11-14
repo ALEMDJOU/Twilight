@@ -130,6 +130,7 @@ export function settingsView(root) {
       row('Vitesse de lecture', 'Plus lent pour mieux entendre.', rate),
       row('Sévérité de la prononciation', 'Niveau d’exigence des exercices au micro (reconnaissance vocale hors ligne).', pron),
       toggle('autoSpeak', 'Lecture automatique', 'Lit la bonne réponse et le dos des cartes à voix haute.'),
+      toggle('speakPraise', 'Compliments à voix haute', 'La voix anglaise te félicite (« Incredible! You’re worth it! ») et t’encourage après une erreur.'),
       toggle('showFr', 'Aide en français ouverte', 'Affiche directement les explications en français (sinon, un clic suffit).')),
     h('section', { class: 'card settings' },
       h('h2', {}, icon('gear', 18), 'Sauvegarde'),

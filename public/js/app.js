@@ -8,6 +8,7 @@ import { todayView } from './views/today.js';
 import { libraryView, unitView } from './views/library.js';
 import { reviewView } from './views/review.js';
 import { settingsView } from './views/settings.js';
+import { stressView } from './views/stress.js';
 
 const ROUTES = {
   '': dashboardView,
@@ -15,6 +16,7 @@ const ROUTES = {
   library: libraryView,
   unit: unitView,
   review: reviewView,
+  stress: stressView,
   settings: settingsView,
 };
 
@@ -23,6 +25,7 @@ const NAV = [
   ['today', 'play', 'Séance'],
   ['library', 'book', 'Livres'],
   ['review', 'cards', 'Révisions'],
+  ['stress', 'sound', 'Accent'],
   ['settings', 'gear', 'Réglages'],
 ];
 

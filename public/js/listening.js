@@ -3,10 +3,10 @@
 import { h, icon, setMode, rich } from './ui.js';
 import { store, today } from './store.js';
 import { loadUnit, unitMeta, unitList } from './content.js';
-import { speak } from './tts.js';
+import { speak, cheer } from './tts.js';
 import { normalize } from './check.js';
 import { confetti, pulse } from './fx.js';
-import { pickPraise, pickComfort, endPraise } from './components.js';
+import { pickPraise, pickComfort, sayEnd } from './components.js';
 import { speechAvailable, listen } from './speech.js';
 
 /* ---------- Phrases ---------- */
@@ -154,7 +154,7 @@ export function runListening(root, items, { title = 'Écoute et prononciation', 
     if (pct >= 80) confetti(pct === 100 ? 1.2 : 0.7);
     stage.replaceChildren(h('div', { class: 'card done-card' },
       h('div', { class: 'big-score' + (pct >= 80 ? ' good' : pct >= 50 ? ' mid' : ' low') }, `${pct} %`),
-      h('p', { class: 'end-praise' }, endPraise(pct)),
+      h('p', { class: 'end-praise' }, sayEnd(pct)),
       h('p', {}, `${right} réussite${right > 1 ? 's' : ''} sur ${items.length}.`),
       h('p', { class: 'muted' }, 'Écouter puis écrire ou répéter une phrase entière entraîne l’oreille et la mémoire en même temps.'),
       onFinish ? h('button', { class: 'btn primary', onclick: () => onFinish({ right, total: items.length }) }, 'Continuer', icon('arrow', 18)) : null));
@@ -182,7 +182,9 @@ function render(it, onResult, onNext) {
     onResult(ok);
     box.classList.add(ok ? 'is-right' : 'is-wrong');
     pulse(box, ok ? 'pop' : 'shake');
-    feedback.replaceChildren(h('div', { class: 'fb-title' }, icon(ok ? 'check' : 'x', 20), ok ? pickPraise() : pickComfort()), extra);
+    const msg = ok ? pickPraise() : pickComfort();
+    feedback.replaceChildren(h('div', { class: 'fb-title' }, icon(ok ? 'check' : 'x', 20), msg), extra);
+    cheer(msg, { soft: !ok });
     const nextBtn = h('button', { class: 'btn primary', onclick: onNext }, 'Suivant', icon('arrow', 18));
     actions.replaceChildren(nextBtn);
     nextBtn.focus();

@@ -5,12 +5,12 @@ import { isCorrect, isNearMiss, normalize } from './check.js';
 import { grade, gradeExercise, preview, addItem, getItem, intervalLabel, AGAIN, HARD, GOOD, EASY } from './srs.js';
 import { cardData, exerciseData, unitCached, unitMeta, photoFor, glossaryFor, ILLUSTRATED } from './content.js';
 import { sceneFor, sceneSVG } from './scenes.js';
-import { speak } from './tts.js';
+import { speak, cheer } from './tts.js';
 import { confetti, pulse } from './fx.js';
 
 const frOn = () => store.state.settings.showFr;
 
-function frBlock(text, label = 'Aide en français') {
+export function frBlock(text, label = 'Aide en français') {
   if (!text) return null;
   return h('details', { class: 'fr-help', open: frOn() || null },
     h('summary', {}, h('span', { class: 'flag' }, 'FR'), label),
@@ -96,10 +96,10 @@ function gallery(unit) {
 
 // Petit glossaire français des collocations / idiomes présents dans le texte d'un exercice.
 function glossBox(uid, texts, title = 'Vocabulaire', extra = []) {
-  if (!ILLUSTRATED.has(unitMeta(uid)?.book?.code)) return null;
-  // Traductions écrites pour l'exercice (champ gloss) + celles trouvées automatiquement dans les cartes.
+  // Traductions écrites pour l'exercice (champ gloss), pour tous les livres,
+  // + celles trouvées automatiquement dans les cartes (collocations et idiomes).
   const g = (extra || []).map(([en, fr]) => ({ en, fr }));
-  for (const x of glossaryFor(uid, texts)) if (!g.some(y => y.en.toLowerCase() === x.en.toLowerCase())) g.push(x);
+  if (ILLUSTRATED.has(unitMeta(uid)?.book?.code)) for (const x of glossaryFor(uid, texts)) if (!g.some(y => y.en.toLowerCase() === x.en.toLowerCase())) g.push(x);
   if (!g.length) return null;
   return h('div', { class: 'gloss' }, h('span', { class: 'gloss-title' }, icon('book', 14), title),
     ...g.map(x => h('span', { class: 'gloss-item' }, h('strong', {}, x.en), ' — ', x.fr)));
@@ -167,7 +167,7 @@ export function runExercises(root, ids, { title = 'Exercices', subtitle = '', on
     if (pct >= 80) confetti(pct === 100 ? 1.2 : 0.7);
     stage.replaceChildren(h('div', { class: 'card done-card' },
       h('div', { class: 'big-score' + (pct >= 80 ? ' good' : pct >= 50 ? ' mid' : ' low') }, `${pct} %`),
-      h('p', { class: 'end-praise' }, endPraise(pct)),
+      h('p', { class: 'end-praise' }, sayEnd(pct)),
       h('p', {}, `${right} bonne${right > 1 ? 's' : ''} réponse${right > 1 ? 's' : ''} du premier coup sur ${total}.`),
       h('p', { class: 'muted' }, pct >= 80 ? 'Excellent ! Ces exercices reviendront dans quelques jours pour bien les ancrer.' : 'Les exercices ratés reviendront dès demain : c’est en se trompant puis en corrigeant qu’on retient le mieux.'),
       onFinish ? h('button', { class: 'btn primary', onclick: () => onFinish({ right, total, results }) }, 'Continuer', icon('arrow', 18)) : null));
@@ -233,8 +233,9 @@ export function renderExercise(ex, retry, onResult, onNext) {
   const box = h('div', { class: 'card exercise' + (retry ? ' retry' : '') });
   if (retry) box.append(h('div', { class: 'retry-badge' }, 'Deuxième essai — tu l’avais manqué'));
   box.append(h('div', { class: 'ex-top' }, h('div', { class: 'ex-source' }, ex.source), ex.uid !== 'p' ? inlineRecap(ex.uid) : null));
-  box.append(h('p', { class: 'ex-instr' }, ex.instr || defaultInstr(ex.t)),
-    ex.instrFr && frOn() ? h('p', { class: 'ex-instr-fr' }, ex.instrFr) : null);
+  const [instr, instrFr] = ex.instr ? [ex.instr, ex.instrFr] : defaultInstr(ex);
+  box.append(h('p', { class: 'ex-instr' }, instr),
+    instrFr && frOn() ? h('p', { class: 'ex-instr-fr' }, instrFr) : null);
   if (ex.ctx) box.append(h('p', { class: 'ex-ctx', html: rich(ex.ctx) }));
 
   const feedback = h('div', { class: 'feedback', 'aria-live': 'polite' });
@@ -248,17 +249,20 @@ export function renderExercise(ex, retry, onResult, onNext) {
     box.classList.add(ok ? 'is-right' : 'is-wrong');
     pulse(box, ok ? 'pop' : 'shake');
     const sentence = fullSentence(ex);
+    const msg = ok ? pickPraise() : pickComfort();
     feedback.replaceChildren(
-      h('div', { class: 'fb-title' }, icon(ok ? 'check' : 'x', 20), ok ? (near ? `${pickPraise()} (attention à l’orthographe)` : pickPraise()) : pickComfort()),
+      h('div', { class: 'fb-title' }, icon(ok ? 'check' : 'x', 20), near ? `${msg} (attention à l’orthographe)` : msg),
       !ok || near ? correctAnswer(ex) : null,
       sentence ? h('div', { class: 'fb-sentence' }, speakBtn(sentence), h('span', { html: rich(sentence) })) : null,
       ex.why ? h('div', { class: 'fb-why', html: rich(ex.why) }) : null,
       glossBox(ex.uid, [sentence, ...normAnswers(ex).map(x => x[0]), ex.t === 'mcq' ? ex.o[ex.a] : null, ex.why], 'Traductions'),
+      ex.trFr ? h('div', { class: 'fb-trfr' }, h('span', { class: 'gloss-title' }, icon('book', 14), 'En français'), h('span', {}, ex.trFr)) : null,
       ex.fr ? frBlock(ex.fr, 'Explication en français') : null);
     const nextBtn = h('button', { class: 'btn primary', onclick: onNext }, 'Suivant', icon('arrow', 18));
     actions.replaceChildren(nextBtn);
     nextBtn.focus();
-    if (store.state.settings.autoSpeak && sentence) speak(sentence);
+    // Compliment à voix haute, puis (si activée) lecture de la phrase complète.
+    cheer(msg, { soft: !ok }, store.state.settings.autoSpeak && sentence ? () => speak(sentence) : null);
   };
 
   const body = h('div', { class: 'ex-body' });
@@ -411,13 +415,23 @@ function correctAnswer(ex) {
     alts.length ? h('span', { class: 'muted' }, `  (aussi accepté : ${alts.join(' / ')})`) : null);
 }
 
-function defaultInstr(t) {
-  return { mcq: 'Choose the correct answer.', gap: 'Complete the sentence.', write: 'Write the sentence.', fix: 'Correct the mistake.', order: 'Put the words in the correct order.', match: 'Match the items.' }[t] || '';
+// Consigne par défaut (anglais, français) quand l'exercice n'a pas la sienne.
+function defaultInstr(ex) {
+  if (ex.t === 'gap' && ex.hint) return ['Complete the sentence. Use the word(s) in brackets in the correct form.', 'Complète la phrase avec le ou les mots entre parenthèses, à la bonne forme.'];
+  return {
+    mcq: ['Choose the correct answer.', 'Choisis la bonne réponse.'],
+    gap: ['Complete the sentence with the missing word(s).', 'Complète la phrase avec le ou les mots qui manquent.'],
+    write: ['Write the answer.', 'Écris la réponse.'],
+    fix: ['There is a mistake in this sentence. Write the correct sentence.', 'Cette phrase contient une erreur. Écris la phrase correcte.'],
+    order: ['Put the words in the correct order to make a sentence.', 'Remets les mots dans l’ordre pour former une phrase.'],
+    match: ['Match each item on the left with the correct item on the right.', 'Associe chaque élément de gauche à l’élément qui lui correspond à droite.'],
+    say: ['Say the sentence out loud.', 'Dis la phrase à voix haute.'],
+  }[ex.t] || ['', ''];
 }
 
 // Messages d'encouragement en anglais après chaque bonne réponse (et plus forts en série).
-const PRAISE = ['Well done!', 'Incredible!', 'Well deserved!', 'You are worth it!', 'Brilliant!', 'Excellent!', 'Fantastic!', 'Great job!', 'Spot on!', 'Superb!', 'You nailed it!', 'Perfect!', 'Keep it up!', 'Outstanding!', 'Amazing work!', 'That’s right!', 'You’re a star!', 'Nicely done!', 'Impressive!', 'Way to go!'];
-const COMBO = { 3: 'Three in a row! You’re on fire!', 5: 'Five in a row! Unstoppable!', 8: 'Eight in a row! You are worth it!', 10: 'Ten in a row! Incredible, well deserved!', 15: 'Fifteen in a row! Absolutely brilliant!' };
+const PRAISE = ['Well done!', 'Incredible! You’re worth it!', 'Well deserved!', 'You’re worth it!', 'Wow, amazing! Well done!', 'Yes! Brilliant, keep going!', 'Brilliant!', 'Excellent!', 'Fantastic!', 'Great job!', 'Spot on!', 'Superb!', 'You nailed it!', 'Perfect!', 'Keep it up!', 'Outstanding!', 'Amazing work!', 'That’s right!', 'You’re a star!', 'Nicely done!', 'Impressive!', 'Way to go!'];
+const COMBO = { 3: 'Three in a row! You’re on fire!', 5: 'Five in a row! Unstoppable!', 8: 'Eight in a row! You’re worth it!', 10: 'Ten in a row! Incredible, well deserved!', 15: 'Fifteen in a row! Absolutely brilliant!' };
 const COMFORT = ['Not quite — you’ll get it next time!', 'Almost! Mistakes help you learn.', 'Don’t give up, you’re learning!', 'Good try! Look at the answer below.', 'Keep going, you can do it!'];
 const pick = a => a[Math.floor(Math.random() * a.length)];
 let combo = 0;
@@ -468,10 +482,17 @@ export function pickPraise() {
 export function pickComfort() { combo = 0; return pick(COMFORT); }
 // Fin de série : message selon le score.
 export function endPraise(pct) {
-  if (pct === 100) return pick(['Flawless! You are worth it!', 'Perfect score! Incredible!', '100 %! Well deserved!']);
+  if (pct === 100) return pick(['Flawless! You’re worth it!', 'Perfect score! Incredible!', '100 %! Well deserved!']);
   if (pct >= 80) return pick(['Excellent work! Well deserved!', 'Great session! Keep it up!', 'Brilliant! You’re making real progress!']);
   if (pct >= 50) return pick(['Good effort! You’re getting there!', 'Nice work! Practice makes perfect.', 'Well done for sticking with it!']);
   return pick(['Every mistake is a lesson. Keep going!', 'Don’t give up! Tomorrow will be easier.', 'Brave effort! You’re learning a lot.']);
+}
+
+// Message de fin affiché et dit à voix haute.
+export function sayEnd(pct) {
+  const msg = endPraise(pct);
+  cheer(msg, { soft: pct < 50 });
+  return msg;
 }
 
 function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }

@@ -20,6 +20,8 @@ It bundles or downloads the following third-party components, each under its own
 | [vosk-browser](https://github.com/ccoreilly/vosk-browser) 0.0.8 (speech recognition in WebAssembly) | `npm run setup:voice` | Apache-2.0 |
 | [Vosk](https://alphacephei.com/vosk/) model `vosk-model-small-en-us-0.15` | `npm run setup:voice` | Apache-2.0 |
 | [Harper](https://github.com/Automattic/harper) / harper.js 2.13.0 (English grammar checker in WebAssembly) | `npm run setup:voice` | Apache-2.0 |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) build b12363 (local inference server, Windows CPU) | `npm run setup:ai` | MIT |
+| [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B), GGUF Q4_K_M quantization by [Unsloth](https://huggingface.co/unsloth/Qwen3-1.7B-GGUF) | `npm run setup:ai` | Apache-2.0 |
 | Photos from [Wikimedia Commons](https://commons.wikimedia.org) | `npm run images` | Various free licenses (CC BY, CC BY-SA, public domain…). The author, license and source of every photo are stored in `public/content/images.json` and shown under each picture in the app. |
 
 ## Learning content

@@ -51,6 +51,12 @@ export function piperAvailable() {
 
 // Texte → identifiants de phonèmes (le module eSpeak est recréé à chaque appel, à partir des octets déjà en mémoire).
 async function phonemeIds(text) {
+  // /…/ : phonèmes IPA donnés tels quels, pour imposer l'accent quand le phonétiseur se trompe.
+  if (/^\/.*\/$/.test(text)) {
+    const m = config.phoneme_id_map, ids = [...m['^'], ...m['_']];
+    for (const c of text.slice(1, -1)) if (m[c]) ids.push(...m[c], ...m['_']);
+    return [...ids, ...m['$']];
+  }
   const { createPiperPhonemize } = await import('../vendor/piper/piper_phonemize.js');
   return new Promise((resolve, reject) => {
     let done = false;
@@ -65,13 +71,13 @@ async function phonemeIds(text) {
   });
 }
 
-async function synthSentence(text, lengthScale) {
+async function synthSentence(text, lengthScale, noiseScale) {
   const ids = await phonemeIds(text);
   const inf = config.inference;
   const feeds = {
     input: new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
     input_lengths: new ort.Tensor('int64', BigInt64Array.from([BigInt(ids.length)]), [1]),
-    scales: new ort.Tensor('float32', Float32Array.from([inf.noise_scale, lengthScale, inf.noise_w]), [3]),
+    scales: new ort.Tensor('float32', Float32Array.from([noiseScale ?? inf.noise_scale, lengthScale, inf.noise_w]), [3]),
   };
   const out = await session.run(feeds);
   return out.output.data;
@@ -80,12 +86,13 @@ async function synthSentence(text, lengthScale) {
 // Découpe en phrases : le modèle est plus naturel et plus rapide sur des morceaux courts.
 const split = t => t.match(/[^.!?…]+[.!?…]*["”’)]*\s*/g)?.map(s => s.trim()).filter(Boolean) || [t];
 
-async function synth(text, rate) {
-  const key = rate + '|' + text;
+// expressive : intonation plus variée (sert aux compliments).
+async function synth(text, rate, expressive = false) {
+  const key = rate + '|' + expressive + '|' + text;
   if (cache.has(key)) return cache.get(key);
   const lengthScale = (config.inference.length_scale || 1) / (rate || 1);
   const parts = [];
-  for (const s of split(text)) parts.push(await synthSentence(s, lengthScale));
+  for (const s of split(text)) parts.push(await synthSentence(s, lengthScale, expressive ? config.inference.noise_scale * 1.3 : undefined));
   const sr = config.audio.sample_rate, gap = Math.round(sr * 0.18);
   const len = parts.reduce((n, p) => n + p.length + gap, 0);
   ctx = ctx || new AudioContext();
@@ -102,17 +109,19 @@ export function piperStop() {
 }
 
 let token = 0;
-export async function piperSpeak(text, rate, onEnd) {
+// opts.pitch > 1 : voix un peu plus aiguë et enjouée (le débit est compensé) ; opts.expressive : intonation plus vivante.
+export async function piperSpeak(text, rate, onEnd, opts = {}) {
   piperStop();
   const my = ++token;
   await piperLoad();
-  const buf = await synth(text, rate);
+  const pitch = opts.pitch || 1;
+  const buf = await synth(text, rate / pitch, opts.expressive);
   if (my !== token) return;            // une autre lecture a été demandée entre-temps
   ctx = ctx || new AudioContext();
   // Sans clic préalable, Chrome garde l'audio suspendu : on ne bloque pas en l'attendant.
   if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   const src = ctx.createBufferSource();
-  src.buffer = buf; src.connect(ctx.destination);
+  src.buffer = buf; src.playbackRate.value = pitch; src.connect(ctx.destination);
   src.onended = () => { if (current === src) current = null; onEnd?.(); };
   current = src;
   src.start();

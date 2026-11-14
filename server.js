@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
 const db = require('./db');
+const ai = require('./ai');
 
 const PORT = Number(process.env.PORT) || 4317;
 const ROOT = path.join(__dirname, 'public');
@@ -79,6 +80,13 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === '/api/reminder/test' && req.method === 'POST') {
     execFile(process.execPath, [path.join(__dirname, 'tools', 'remind.js'), '--force'], { windowsHide: true }, err => send(res, err ? 500 : 200, JSON.stringify({ ok: !err }), TYPES['.json']));
+    return;
+  }
+
+  // Correcteur IA local (llama.cpp + Qwen3), démarré à la demande.
+  if (url.pathname === '/api/ai' && req.method === 'GET') return send(res, 200, JSON.stringify(ai.status()), TYPES['.json']);
+  if (url.pathname === '/api/ai/coach' && req.method === 'POST') {
+    readJson(req).then(b => ai.coach(req, res, b)).catch(() => send(res, 400, 'bad request'));
     return;
   }
 

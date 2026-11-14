@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
   rate: 0.95,
   voiceEngine: 'piper',
   autoSpeak: false,
+  speakPraise: true,
   theme: 'auto', // 'auto' | 'light' | 'dark'
 };
 

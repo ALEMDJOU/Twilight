@@ -1,6 +1,6 @@
 {
   "name": "twilight",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Offline-first web app to learn English with spaced repetition, retrieval practice and short lessons — for French speakers.",
   "private": true,
   "license": "MIT",
@@ -12,6 +12,7 @@
     "start": "node --disable-warning=ExperimentalWarning server.js",
     "setup": "node tools/init-content.js && node tools/fetch-voice.js",
     "setup:voice": "node tools/fetch-voice.js",
+    "setup:ai": "node tools/fetch-ai.js",
     "check": "node tools/check-content.js",
     "images": "node tools/fetch-images.js"
   }

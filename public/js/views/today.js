@@ -5,6 +5,7 @@ import { loadUnit, unitMeta, getProverbs } from '../content.js';
 import { renderLesson, runExercises, runCards, lessonAnchors } from '../components.js';
 import { confetti } from '../fx.js';
 import { buildListening, runListening } from '../listening.js';
+import { runStressQuiz, dailyStressWords } from './stress.js';
 import { planFor, dayRecord, pendingDays, stepInfo, markLessonDone, markUnitExercises, warmupCards, unitExercises, reviewExercises, introduceProverbs, remainingCards } from '../session.js';
 
 const fmtDay = k => new Date(k + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -99,6 +100,8 @@ export function todayView(root, params) {
       main.replaceChildren(h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Préparation des phrases…')));
       const items = await buildListening();
       runListening(main, items, { title: info.title, subtitle: sub, onFinish: () => complete(i) });
+    } else if (step.type === 'stress') {
+      runStressQuiz(main, dailyStressWords(), { title: info.title, subtitle: sub, listenFirst: false, onFinish: () => complete(i) });
     } else if (step.type === 'proverbs') {
       setMode('lesson');
       const ids = introduceProverbs(dayRec);

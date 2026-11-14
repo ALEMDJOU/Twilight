@@ -78,6 +78,7 @@ export function getPlan() {
   }
   steps.push({ type: 'review-ex', done: false });
   steps.push({ type: 'listening', done: false });
+  steps.push({ type: 'stress', done: false });
   steps.push({ type: 'proverbs', done: false });
   steps.push({ type: 'cards', done: false });
   d.plan = { minutes: store.state.settings.minutesPerDay, units, steps, created: Date.now() };
@@ -92,6 +93,12 @@ function withListening(plan) {
     plan.steps.splice(at < 0 ? plan.steps.length : at, 0, { type: 'listening', done: false });
     store.save();
   }
+  // Idem pour l'accent tonique.
+  if (!plan.steps.some(s => s.type === 'stress') && !plan.steps.every(s => s.done)) {
+    const at = plan.steps.findIndex(s => s.type === 'proverbs');
+    plan.steps.splice(at < 0 ? plan.steps.length : at, 0, { type: 'stress', done: false });
+    store.save();
+  }
   return plan;
 }
 
@@ -104,6 +111,7 @@ export function stepInfo(step) {
     case 'unit-ex': { const m = unitMeta(step.uid); return { title: `Exercices — ${m.title}`, desc: `Pratique immédiate de l’unité ${m.n}`, method: 'exercise', icon: 'pencil' }; }
     case 'review-ex': return { title: 'Révision mélangée', desc: 'Exercices des unités passées, mélangés pour mieux retenir.', method: 'exercise', icon: 'target' };
     case 'listening': return { title: 'Écoute et prononciation', desc: 'Dictées, compréhension et phrases à répéter à voix haute.', method: 'exercise', icon: 'sound' };
+    case 'stress': return { title: 'Accent tonique', desc: 'Choisis la syllabe à accentuer dans 10 mots.', method: 'exercise', icon: 'sound' };
     case 'proverbs': return { title: 'Proverbes du jour', desc: `${store.state.settings.newProverbsPerDay} nouveaux proverbes à découvrir.`, method: 'cards', icon: 'quote' };
     case 'cards': return { title: 'Flashcards', desc: 'Nouvelles cartes des leçons du jour et révisions restantes.', method: 'cards', icon: 'cards' };
   }

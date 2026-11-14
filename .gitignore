@@ -18,6 +18,9 @@ public/img/
 # Voix Piper et reconnaissance vocale Vosk (~150 Mo, npm run setup:voice)
 public/vendor/
 
+# Correcteur IA local : llama.cpp + modèle Qwen3 (~1,1 Go, npm run setup:ai)
+models/
+
 # Données personnelles : progression SQLite et sauvegardes
 data/
 *.db
