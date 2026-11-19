@@ -43,9 +43,14 @@ export function piperLoad() {
 }
 
 // Disponible si les fichiers sont présents (sans forcer le chargement complet).
+// Le cache du Service Worker d'abord (hors ligne, il ignore les requêtes HEAD), puis le serveur.
 let probe = null;
 export function piperAvailable() {
-  if (!probe) probe = fetch(BASE + MODEL + '.json', { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+  if (!probe) probe = (async () => {
+    const url = BASE + MODEL + '.json';
+    try { if ('caches' in window && await caches.match(url)) return true; } catch { /* cache indisponible */ }
+    return fetch(url, { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+  })();
   return probe;
 }
 

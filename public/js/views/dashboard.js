@@ -34,17 +34,15 @@ export function dashboardView(root) {
   const R = 52, C = 2 * Math.PI * R;
   const ring = h('div', { class: 'ring', html: `
     <svg viewBox="0 0 120 120" width="148" height="148" aria-hidden="true">
-      <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE3A3"/><stop offset="1" stop-color="#F08A5D"/></linearGradient></defs>
+      <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#DDF5F2"/><stop offset="1" stop-color="#20BFA9"/></linearGradient></defs>
       <circle cx="60" cy="60" r="${R}" class="ring-bg"/>
       <circle cx="60" cy="60" r="${R}" class="ring-fg" stroke-dasharray="${C}" stroke-dashoffset="${C}" data-target="${C * (1 - pct / 100)}"/>
     </svg>` },
     h('div', { class: 'ring-label' }, h('strong', {}, `${pct} %`), h('span', {}, `${fmtMin(spent)} / ${fmtMin(goal)}`)));
 
   const next = plan.steps.find(x => !x.done);
-  const sky = h('div', { class: 'sky', 'aria-hidden': 'true' },
-    h('div', { class: 'sun' }), h('div', { class: 'hill' }), h('div', { class: 'hill h2' }),
-    Array.from({ length: 22 }, (_, i) => h('span', { class: 'star', style: { left: `${(i * 37) % 100}%`, top: `${(i * 53) % 55}%`, '--t': `${(i % 7) * 0.45}s` } })));
-  const hero = h('section', { class: 'hero card reveal' }, sky,
+  // Bandeau d'une seule couleur (bleu médical), sans décor.
+  const hero = h('section', { class: 'hero card reveal' },
     h('div', { class: 'hero-text' },
       h('div', { class: 'eyebrow light' }, new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })),
       h('h1', {}, hello + ' !'),
@@ -131,16 +129,25 @@ function last7() {
 }
 
 function history(goal) {
-  const wrap = h('div', { class: 'bars' });
+  // Liste de barres : chaque jour a aussi sa valeur en texte (lecteurs d'écran), pas seulement en info-bulle.
+  const wrap = h('ul', { class: 'bars', 'aria-label': 'Temps d’étude des 14 derniers jours' });
   const d = new Date(); d.setDate(d.getDate() - 13);
+  let sum = 0, hit = 0;
   for (let i = 0; i < 14; i++) {
     const k = dayKey(d), x = store.state.days[k];
     const t = x ? x.time.lesson + x.time.exercise + x.time.cards : 0;
     const hgt = Math.min(100, (t / goal) * 100);
-    wrap.append(h('div', { class: 'bar-col', title: `${d.toLocaleDateString('fr-FR')} : ${fmtMin(t)}` },
-      h('div', { class: 'bar-track' }, h('div', { class: 'bar' + (t >= goal ? ' full' : ''), style: { height: `${hgt}%`, '--d': `${i * 40}ms` } })),
-      h('span', {}, d.toLocaleDateString('fr-FR', { weekday: 'narrow' }))));
+    sum += t; if (t >= goal) hit++;
+    const day = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    wrap.append(h('li', { class: 'bar-col', title: `${day} : ${fmtMin(t)}${t >= goal ? ' (objectif atteint)' : ''}` },
+      h('div', { class: 'bar-track', 'aria-hidden': 'true' }, h('div', { class: 'bar' + (t >= goal ? ' full' : ''), style: { height: `${hgt}%`, '--d': `${i * 40}ms` } })),
+      h('span', { 'aria-hidden': 'true' }, d.toLocaleDateString('fr-FR', { weekday: 'narrow' })),
+      h('span', { class: 'sr-only' }, `${day} : ${fmtMin(t)}${t >= goal ? ', objectif atteint' : ''}`)));
     d.setDate(d.getDate() + 1);
   }
-  return h('div', {}, wrap, h('p', { class: 'muted tiny' }, 'Une barre pleine = objectif du jour atteint.'));
+  const legend = h('div', { class: 'bars-legend muted tiny' },
+    h('span', {}, h('i', { class: 'lg-swatch' }), 'Temps d’étude du jour'),
+    h('span', {}, h('i', { class: 'lg-swatch full' }), 'Objectif atteint (barre pleine)'));
+  return h('div', {}, wrap, legend,
+    h('p', { class: 'muted small bars-sum' }, `Total : ${fmtMin(sum)} sur 14 jours · objectif atteint ${hit} jour${hit > 1 ? 's' : ''} sur 14.`));
 }

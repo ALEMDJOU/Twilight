@@ -61,6 +61,9 @@ const PATHS = {
   quote: 'M7 7h4v4c0 3-2 5-4 6M15 7h4v4c0 3-2 5-4 6',
   target: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12zM12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
   pencil: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
+  mic: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8',
+  note: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
+  save: 'M12 3v12M7 10l5 5 5-5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2',
 };
 
 export function icon(name, size = 20) {
@@ -157,15 +160,20 @@ export function anchorNav(entries, { label = 'Aller à' } = {}) {
   });
   const btns = list.map(([text, el], i) => {
     el.classList.add('anchor-target');
-    return h('button', { type: 'button', class: 'anchor-chip', onclick: () => { lock = Date.now() + 1000; setOn(i); el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } }, text);
+    return h('button', { type: 'button', class: 'anchor-chip', onclick: () => {
+      lock = Date.now() + 1000; setOn(i);
+      if (el.tagName === 'DETAILS') el.open = true; // section repliable : on l'ouvre avant d'y aller
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } }, text);
   });
   nav.append(h('span', { class: 'anchor-label' }, label), ...btns);
   // Met en évidence la section en cours : la dernière dont le haut est passé sous la barre ;
   // en bas de page, la dernière visible (les dernières sections, courtes, n'atteignent jamais le haut).
-  let raf = 0;
+  let raf = 0, misses = 0;
   const update = () => {
     raf = 0;
-    if (!nav.isConnected) { if (nav._done) removeEventListener('scroll', onScroll); return; }
+    // Barre retirée de la page (ou jamais affichée) : on arrête d'écouter le défilement.
+    if (!nav.isConnected) { if (nav._done || ++misses > 1) removeEventListener('scroll', onScroll); return; }
     nav._done = true;
     if (Date.now() < lock) return;
     const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
@@ -178,6 +186,23 @@ export function anchorNav(entries, { label = 'Aller à' } = {}) {
   requestAnimationFrame(update);
   nav._disconnect = () => removeEventListener('scroll', onScroll);
   return nav;
+}
+
+// Génération de rendu : une vue asynchrone vérifie après chaque await qu'on n'a pas changé de page entre-temps.
+export const route = { gen: 0 };
+export function staleCheck() { const g = route.gen; return () => g !== route.gen; }
+
+// Titre de page : dans les pages d'entraînement, le titre du module (h2 de .runner-head) devient le h1,
+// y compris quand le module se redessine (nouvelle petite séance de cartes, etc.).
+export function pageHeading(el) {
+  const fix = () => el.querySelectorAll('.runner-head h2').forEach(t => {
+    const h1 = h('h1', { class: t.className || null });
+    h1.append(...t.childNodes);
+    t.replaceWith(h1);
+  });
+  fix();
+  new MutationObserver(fix).observe(el, { childList: true, subtree: true });
+  return el;
 }
 
 // Bouton « remonter en haut », affiché quand on a défilé loin.

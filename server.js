@@ -66,8 +66,19 @@ function send(res, code, body, type = 'text/plain; charset=utf-8') {
   res.end(body);
 }
 
+// Une requête mal formée ne doit jamais arrêter le serveur : on répond 400.
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  try {
+    route(req, res);
+  } catch (e) {
+    console.error('Requête refusée :', req.url, e.message);
+    if (!res.headersSent) send(res, 400, 'Bad request');
+    else res.destroy();
+  }
+});
+
+function route(req, res) {
+  const url = new URL(req.url, 'http://localhost');
 
   if (url.pathname === '/api/reminder') {
     if (req.method === 'GET') { reminderStatus().then(st => send(res, 200, JSON.stringify(st), TYPES['.json'])); return; }
@@ -101,6 +112,13 @@ const server = http.createServer((req, res) => {
         try {
           const state = JSON.parse(body);
           if (!state || state.version !== 1) throw new Error('format');
+          // Concurrence optimiste : le client indique la sauvegarde sur laquelle il s'appuie ;
+          // si la base a été enregistrée depuis par un autre onglet, on refuse (409) au lieu d'écraser.
+          const base = req.headers['x-twilight-base'];
+          const stored = db.savedAt();
+          if (base !== undefined && stored > (Number(base) || 0)) {
+            return send(res, 409, JSON.stringify({ ok: false, savedAt: stored }), TYPES['.json']);
+          }
           db.dailyBackup();
           db.writeState(state);
           send(res, 200, '{"ok":true}', TYPES['.json']);
@@ -115,13 +133,17 @@ const server = http.createServer((req, res) => {
   }
 
   let file = path.normalize(path.join(ROOT, decodeURIComponent(url.pathname)));
-  if (!file.startsWith(ROOT)) return send(res, 403, 'Forbidden');
+  if (file !== ROOT && !file.startsWith(ROOT + path.sep)) return send(res, 403, 'Forbidden');
   if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');
   fs.readFile(file, (err, data) => {
     if (err) return send(res, 404, 'Not found');
     send(res, 200, data, TYPES[path.extname(file)] || 'application/octet-stream');
   });
-});
+}
+
+// Filet de sécurité : une erreur imprévue est notée dans la console, le serveur continue.
+process.on('uncaughtException', e => console.error('Erreur inattendue :', e));
+process.on('unhandledRejection', e => console.error('Promesse rejetée :', e));
 
 server.listen(PORT, '127.0.0.1', () => {
   const link = `http://localhost:${PORT}`;

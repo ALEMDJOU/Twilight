@@ -1,6 +1,9 @@
 // Service Worker de Twilight : l'application s'ouvre et fonctionne même sans serveur ni internet.
 // Tous les fichiers (code, polices, unités, photos) sont gardés dans le cache du navigateur.
-const CACHE = 'twilight-v34';
+// Deux caches : CACHE (code et unités, renouvelé à chaque version) et ASSETS (voix, moteurs, photos, polices :
+// ~170 Mo qui ne changent pas d'une version à l'autre ; jamais vidé en bloc, seulement des fichiers qui ne sont plus listés).
+const CACHE = 'twilight-v40';
+const ASSETS = 'twilight-assets';
 // Voix Piper (environ 100 Mo) : gardée dans le cache pour parler sans internet.
 const VOICE = ['ort.wasm.min.js', 'ort-wasm-simd.wasm', 'ort-wasm.wasm', 'piper_phonemize.js', 'piper_phonemize.wasm', 'piper_phonemize.data', 'en_US-lessac-medium.onnx.json', 'en_US-lessac-medium.onnx'].map(f => 'vendor/piper/' + f)
   .concat(['vendor/vosk/vosk.js', 'vendor/vosk/vosk-model-small-en-us-0.15.tar.gz'])
@@ -10,41 +13,77 @@ const SHELL = [
   'js/app.js', 'js/store.js', 'js/srs.js', 'js/content.js', 'js/check.js', 'js/tts.js', 'js/ui.js', 'js/fx.js',
   'js/components.js', 'js/session.js', 'js/piper.js', 'js/speech.js', 'js/listening.js', 'js/grammar.js', 'js/writing.js', 'js/coach.js', 'js/mistakes.js', 'js/topics.js', 'js/scenes.js', 'js/stress-data.js',
   'js/views/dashboard.js', 'js/views/today.js', 'js/views/library.js', 'js/views/review.js', 'js/views/settings.js', 'js/views/stress.js',
-  'fonts/fraunces-latin-wght-normal.woff2', 'fonts/fraunces-latin-ext-wght-normal.woff2', 'fonts/fraunces-latin-wght-italic.woff2',
-  'fonts/plus-jakarta-sans-latin-wght-normal.woff2', 'fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2', 'fonts/plus-jakarta-sans-latin-wght-italic.woff2',
   'content/catalog.json', 'content/index.json', 'content/proverbs.json', 'content/images.json',
 ];
+const FONTS = [
+  'fonts/great-vibes-latin-400-normal.woff2', 'fonts/fraunces-latin-wght-normal.woff2', 'fonts/fraunces-latin-ext-wght-normal.woff2', 'fonts/fraunces-latin-wght-italic.woff2',
+  'fonts/plus-jakarta-sans-latin-wght-normal.woff2', 'fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2', 'fonts/plus-jakarta-sans-latin-wght-italic.woff2',
+];
+const isAsset = path => /^\/(vendor|img|fonts)\//.test(path);
+const abs = u => new URL(u, self.registration.scope).href;
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil((async () => {
+    await (await caches.open(CACHE)).addAll(SHELL);
+    // Polices : seulement celles qui manquent (elles restent d'une version à l'autre).
+    const assets = await caches.open(ASSETS);
+    const missing = [];
+    for (const u of FONTS) if (!(await assets.match(u))) missing.push(u);
+    if (missing.length) await assets.addAll(missing);
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);
+    const assets = await caches.open(ASSETS);
+    for (const k of await caches.keys()) {
+      if (k === CACHE || k === ASSETS) continue;
+      // Ancienne version : on récupère d'abord la voix, les moteurs et les photos pour ne pas les retélécharger.
+      const old = await caches.open(k);
+      for (const req of await old.keys()) {
+        if (!isAsset(new URL(req.url).pathname) || await assets.match(req)) continue;
+        const hit = await old.match(req);
+        if (hit) await assets.put(req, hit).catch(() => {});
+      }
+      await caches.delete(k);
+    }
     await self.clients.claim();
     precacheContent();
   })());
 });
 
 // Met en cache toutes les unités et photos disponibles (appelé à l'activation et à chaque ouverture).
-async function precacheContent() {
+// Un seul passage à la fois : l'activation et le message 'sync' de la page partagent le même téléchargement.
+let precaching = null;
+function precacheContent() {
+  if (!precaching) precaching = doPrecache().finally(() => { precaching = null; });
+  return precaching;
+}
+
+async function doPrecache() {
   try {
-    const cache = await caches.open(CACHE);
+    const cache = await caches.open(CACHE), assets = await caches.open(ASSETS);
     const [idx, imgs] = await Promise.all([
       fetch('content/index.json', { cache: 'no-store' }).then(r => r.json()),
-      fetch('content/images.json', { cache: 'no-store' }).then(r => r.json()).catch(() => ({})),
+      fetch('content/images.json', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
     await cache.put('content/index.json', new Response(JSON.stringify(idx), { headers: { 'Content-Type': 'application/json' } }));
-    const urls = [
-      ...VOICE,
-      ...idx.units.map(u => `content/units/${u}.json`),
-      ...Object.values(imgs).filter(Boolean).map(i => i.file),
+    const photos = imgs ? Object.values(imgs).filter(Boolean).map(i => i.file) : [];
+    const list = [
+      ...VOICE.map(u => [assets, u]),
+      ...idx.units.map(u => [cache, `content/units/${u}.json`]),
+      ...photos.map(u => [assets, u]),
     ];
-    for (const u of urls) {
-      if (!(await cache.match(u))) {
-        try { const r = await fetch(u); if (r.ok) await cache.put(u, r); } catch { /* hors ligne : on réessaiera */ }
+    for (const [c, u] of list) {
+      if (!(await c.match(u))) {
+        try { const r = await fetch(u); if (r.ok) await c.put(u, r); } catch { /* hors ligne : on réessaiera */ }
       }
+    }
+    // Ménage dans ASSETS : fichiers qui ne sont plus listés (seulement si la liste des photos a bien été lue).
+    if (imgs) {
+      const keep = new Set([...VOICE, ...FONTS, ...photos].map(abs));
+      for (const req of await assets.keys()) if (!keep.has(req.url)) await assets.delete(req);
     }
   } catch { /* serveur indisponible */ }
 }
@@ -57,10 +96,10 @@ self.addEventListener('fetch', e => {
   if (url.pathname.startsWith('/api/')) return; // la progression passe toujours par le serveur (ou localStorage)
 
   // Photos : le cache d'abord (elles ne changent jamais).
-  if (url.pathname.startsWith('/img/') || url.pathname.startsWith('/fonts/') || url.pathname.startsWith('/vendor/')) {
+  if (isAsset(url.pathname)) {
     e.respondWith(caches.match(e.request).then(hit => hit || fetch(e.request).then(r => {
       const copy = r.clone();
-      if (r.ok) caches.open(CACHE).then(c => c.put(e.request, copy));
+      if (r.ok) caches.open(ASSETS).then(c => c.put(e.request, copy));
       return r;
     })));
     return;

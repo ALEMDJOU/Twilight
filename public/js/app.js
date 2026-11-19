@@ -1,7 +1,7 @@
 // Point d'entrée de Twilight : chargement, navigation par #/route.
 import { store, streak } from './store.js';
 import { initContent } from './content.js';
-import { h, icon, setMode, applyTheme, toggleTheme, toast, initBackToTop } from './ui.js';
+import { h, icon, setMode, getMode, applyTheme, toggleTheme, toast, initBackToTop, route as renderGen } from './ui.js';
 import { stagger } from './fx.js';
 import { dashboardView } from './views/dashboard.js';
 import { todayView } from './views/today.js';
@@ -49,16 +49,28 @@ function movePill() {
 
 
 function updateChrome(route) {
-  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.route === route || (route === 'unit' && a.dataset.route === 'library')));
+  let label = 'Accueil';
+  document.querySelectorAll('#nav a').forEach(a => {
+    const on = a.dataset.route === route || (route === 'unit' && a.dataset.route === 'library');
+    a.classList.toggle('active', on);
+    if (on) { a.setAttribute('aria-current', 'page'); label = a.textContent.trim(); } else a.removeAttribute('aria-current');
+  });
+  document.title = `${label} · Twilight`;
   const s = streak();
-  document.getElementById('streak').replaceChildren(icon('flame', 16), h('span', {}, String(s)));
-  document.getElementById('streak').title = `${s} jour${s > 1 ? 's' : ''} de suite (au moins 15 min)`;
+  const badge = document.getElementById('streak');
+  const txt = `${s} jour${s > 1 ? 's' : ''} de suite (au moins 15 min par jour)`;
+  // Série : texte visible court, phrase complète pour les lecteurs d'écran et en info-bulle.
+  badge.replaceChildren(icon('flame', 16), h('span', { 'aria-hidden': 'true' }, `${s} jour${s > 1 ? 's' : ''}`), h('span', { class: 'sr-only' }, `Série : ${txt}`));
+  badge.title = `Série : ${txt}`;
+  badge.removeAttribute('aria-label');
   requestAnimationFrame(movePill);
 }
 
 async function render() {
+  const gen = ++renderGen.gen;
   main._cleanup?.();
   main._cleanup = null;
+  main.querySelectorAll('.anchor-nav').forEach(n => n._disconnect?.());
   setMode(null);
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const route = parts[0] || '';
@@ -69,8 +81,10 @@ async function render() {
   main.classList.add('view-enter');
   try {
     await view(main, parts.slice(1));
+    if (gen !== renderGen.gen) return; // une autre page a été demandée pendant le chargement
     stagger(main);
   } catch (e) {
+    if (gen !== renderGen.gen) return;
     console.error(e);
     main.replaceChildren(h('div', { class: 'card' }, h('h2', {}, 'Oups, une erreur est survenue.'), h('pre', { class: 'muted small' }, String(e.stack || e))));
   }
@@ -96,6 +110,8 @@ async function start() {
     navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(reg => reg.active?.postMessage('sync')).catch(() => {});
   }
   addEventListener('hashchange', render);
+  // Progression mise à jour par un autre onglet : on réaffiche la page, sauf en pleine leçon ou exercice.
+  addEventListener('twilight-sync', () => { applyTheme(); if (!getMode()) render(); });
   addEventListener('beforeunload', () => store.save(true));
   document.addEventListener('visibilitychange', () => { if (document.hidden) store.save(true); });
   document.getElementById('loading')?.remove();

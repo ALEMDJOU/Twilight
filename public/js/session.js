@@ -2,12 +2,16 @@
 // Répartition fondée sur la recherche (Dunlosky et al., 2013 ; Roediger & Karpicke, 2006 ; Cepeda et al., 2006) :
 //   40 % flashcards en répétition espacée, 40 % exercices (récupération active), 20 % leçons.
 import { store, today, dayKey } from './store.js';
-import { nextUnit, loadUnit, cardIds, exerciseIds, proverbExerciseIds, getProverbs, unitMeta } from './content.js';
-import { dueIds, addItem } from './srs.js';
+import { nextUnit, loadUnit, unitCached, cardIds, exerciseIds, proverbExerciseIds, getProverbs, unitMeta } from './content.js';
+import { dueIds, addItem, pickDue } from './srs.js';
 
 export const SPLIT = { cards: 0.4, exercise: 0.4, lesson: 0.2 };
 // Durées moyennes estimées, servent à doser la séance.
 const SEC_PER_CARD = 12, SEC_PER_EXERCISE = 45, MIN_PER_LESSON = 9;
+// Exercices d'une unité (médiane des livres) quand l'unité n'est pas encore chargée.
+const EX_PER_UNIT = 22, CARDS_PER_UNIT = 17;
+// Nouvelles cartes par jour au maximum : reconnaissance (c:) et production (r:) comptées à part.
+const NEW_CARDS = 20, NEW_PROD = 10;
 
 export function budgets() {
   const m = store.state.settings.minutesPerDay;
@@ -60,10 +64,38 @@ function pickUnits(count) {
 export function dayRecord(key) { return key ? store.state.days[key] : today(); }
 export function planFor(key) { return key ? store.state.days[key]?.plan || null : getPlan(); }
 
+// Exercices réels d'une unité (faits, chargés, ou estimation).
+function exercisesOf(uid) {
+  return store.state.units[uid]?.total ?? unitCached(uid)?.exercises?.length ?? EX_PER_UNIT;
+}
+
+// Places de révision mélangée après n leçons totalisant `unitEx` exercices.
+// Le temps de leçon non utilisé (moins de nouvelles unités) va aux révisions.
+function reviewRoom(n, unitEx) {
+  const b = budgets();
+  const free = Math.max(0, b.lesson - n * MIN_PER_LESSON * 60);
+  return Math.max(8, Math.round((b.exercise + free - unitEx * SEC_PER_EXERCISE) / SEC_PER_EXERCISE));
+}
+
+// Nouvelles unités du jour selon le retard. La n-ième unité n'est ajoutée que si les exercices dus tiennent
+// dans la révision avec n − 1 unités (au pire un jour de décalage) : 2 sans retard, 1 si retard modéré, 0 sinon.
+// Idem si la file de nouvelles cartes déborde ou si les cartes en retard dépassent une séance.
+function unitsToday(max) {
+  const dueX = dueIds(['x:']).length;
+  const due = dueIds(CARD_PREFIX);
+  const fresh = due.filter(isNew);
+  const queue = fresh.filter(id => id.startsWith('c:')).length;
+  const late = due.length - fresh.length;
+  const cardRoom = Math.round(budgets().cards / SEC_PER_CARD);
+  let n = max;
+  while (n > 0 && (dueX > reviewRoom(n - 1, (n - 1) * EX_PER_UNIT) || queue + n * CARDS_PER_UNIT > 2 * NEW_CARDS || late > cardRoom)) n--;
+  return n;
+}
+
 export function getPlan() {
   const d = today();
   const b = budgets();
-  const nUnits = Math.max(1, Math.round(b.lesson / 60 / MIN_PER_LESSON));
+  const nUnits = unitsToday(Math.max(1, Math.round(b.lesson / 60 / MIN_PER_LESSON)));
   if (d.plan && d.plan.minutes === store.state.settings.minutesPerDay) {
     // Recalcule si de nouvelles unités sont arrivées et qu'aucune leçon du jour n'a commencé.
     const started = d.plan.steps.some(s => s.done && s.type !== 'warmup');
@@ -141,7 +173,7 @@ const isNew = id => (store.state.items[id]?.reps ?? 0) === 0 && !(store.state.it
 
 export function warmupCards() {
   const max = Math.round(budgets().cards / SEC_PER_CARD / 2);
-  return dueIds(CARD_PREFIX).filter(id => !isNew(id)).slice(0, max);
+  return pickDue(dueIds(CARD_PREFIX).filter(id => !isNew(id)), max);
 }
 
 export async function unitExercises(uid) {
@@ -150,11 +182,12 @@ export async function unitExercises(uid) {
 }
 
 export function reviewExercises(plan = getPlan()) {
-  const used = plan.units.length * 10 * SEC_PER_EXERCISE;
-  const max = Math.max(8, Math.round((budgets().exercise - used) / SEC_PER_EXERCISE));
+  // Budget calculé sur le vrai nombre d'exercices des unités du jour.
+  const max = reviewRoom(plan.units.length, plan.units.reduce((s, uid) => s + exercisesOf(uid), 0));
   const todays = new Set(plan.units);
   const due = dueIds(['x:']).filter(id => !todays.has(id.split(':')[1]));
-  return interleave(due).slice(0, max);
+  // On choisit d'abord (erreurs récentes + plus en retard), puis on mélange.
+  return interleave(pickDue(due, max));
 }
 
 // Mélange les exercices de sources différentes pour éviter les blocs d'un même sujet.
@@ -189,9 +222,24 @@ export function introduceProverbs(d = today()) {
 export function remainingCards() {
   const max = Math.round(budgets().cards / SEC_PER_CARD);
   const due = dueIds(CARD_PREFIX);
-  // Les nouvelles cartes après les révisions, mais toujours incluses (elles viennent des leçons du jour).
-  const reviews = due.filter(id => !isNew(id)), fresh = due.filter(isNew);
-  return [...reviews.slice(0, Math.max(0, max - fresh.length)), ...fresh];
+  // Révisions d'abord ; nouvelles cartes plafonnées par jour (le plafond tient sur toutes les étapes du jour).
+  const reviews = due.filter(id => !isNew(id));
+  const fresh = [...freshToday('c', due.filter(id => isNew(id) && id.startsWith('c:')), NEW_CARDS),
+    ...freshToday('r', due.filter(id => isNew(id) && id.startsWith('r:')), NEW_PROD)];
+  return [...pickDue(reviews, Math.max(0, max - fresh.length)), ...fresh];
+}
+
+// Nouvelles cartes retenues aujourd'hui (gardées dans le jour) : on complète jusqu'au plafond
+// et on rend celles qui restent à voir.
+function freshToday(kind, pool, cap) {
+  const d = today();
+  const list = (d.fresh ||= {})[kind] ||= [];
+  for (const id of pool) {
+    if (list.length >= cap) break;
+    if (!list.includes(id)) list.push(id);
+  }
+  store.save();
+  return list.filter(isNew);
 }
 
 export function dueSummary() {

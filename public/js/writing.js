@@ -8,7 +8,7 @@ import { studiedUnits } from './listening.js';
 import { pickPraise } from './components.js';
 import { cheer } from './tts.js';
 import { confetti } from './fx.js';
-import { coachPanel, aiStatus } from './coach.js';
+import { coachPanel, aiStatus, MAX_CHARS } from './coach.js';
 import { TOPICS, KIND_LABELS } from './topics.js';
 
 // Tire un sujet du type demandé, en évitant les 30 derniers (gardés dans la progression).
@@ -49,6 +49,15 @@ function highlight(text, issues) {
   return out.join('').replace(/\n/g, '<br>');
 }
 
+// Message de Harper (en anglais) : première phrase seulement, `mot` affiché en code au lieu des accents graves.
+function harperMsg(msg) {
+  let m = String(msg || '').trim();
+  const cut = m.search(/[.!?](\s|$)/);
+  if (cut > 0 && cut < m.length - 1) m = m.slice(0, cut + 1);
+  if (m.length > 160) m = m.slice(0, 157).trimEnd() + '…';
+  return esc(m).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/`/g, '');
+}
+
 // Brouillon gardé dans ce navigateur : un rechargement ou un changement de page ne fait pas perdre le texte.
 const DRAFT = 'twilight-writing-draft';
 const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT)) || null; } catch { return null; } };
@@ -56,7 +65,7 @@ const saveDraft = d => { try { localStorage.setItem(DRAFT, JSON.stringify(d)); }
 const countWords = s => s.trim().split(/\s+/).filter(Boolean).length;
 
 // Mise en page : le sujet reste visible à côté de la zone d'écriture (on reconnaît au lieu de se souvenir),
-// une seule action principale « Corriger mon essay », les résultats en dessous.
+// une action principale « Corriger mon texte » (IA), la vérification rapide à côté, les résultats en dessous.
 export async function runWriting(root, { onFinish } = {}) {
   setMode('exercise');
   const words = await wordsToUse();
@@ -79,8 +88,20 @@ export async function runWriting(root, { onFinish } = {}) {
     promptEl.textContent = t.en;
     frEl.textContent = t.fr;
     pointsEl.replaceChildren(...t.points.map(p => h('li', {}, p)));
-    usefulEl.replaceChildren(...t.useful.map(([en, fr]) => h('span', { class: 'chip', title: fr }, en, h('small', {}, fr))));
+    usefulEl.replaceChildren(...t.useful.map(([en, fr]) => insertChip(en, fr, fr)));
     updateCount();
+  };
+  // Expression cliquable : insérée dans le texte à l'endroit du curseur (bouton, donc utilisable au clavier).
+  const insertChip = (en, fr, title) => h('button', { class: 'chip write-insert', type: 'button', title: `${title} — cliquer pour l’insérer dans ton texte`,
+    'aria-label': `Insérer « ${en} » dans ton texte (${fr})`, onclick: () => insertAtCursor(en) }, en, h('small', {}, fr));
+  const insertAtCursor = phrase => {
+    const v = area.value, start = area.selectionStart ?? v.length, end = area.selectionEnd ?? start;
+    // Espaces autour seulement si besoin (pas d'espace avant une ponctuation ni en début de ligne).
+    const pre = start > 0 && !/\s$/.test(v.slice(0, start)) ? ' ' : '';
+    const post = end < v.length && !/^[\s.,;:!?]/.test(v.slice(end)) ? ' ' : (end >= v.length ? ' ' : '');
+    area.focus();
+    area.setRangeText(pre + phrase + post, start, end, 'end');
+    area.dispatchEvent(new Event('input', { bubbles: true }));   // compteur et brouillon
   };
   // L'IA reçoit le sujet complet : type d'écrit, consigne, questions guides et longueur attendue.
   const topicText = () => topic ? [`(${KIND_LABELS[topic.kind]}, about ${topic.words} words) ${topic.en}`, ...topic.points.map(p => `- ${p}`)].join('\n') : '';
@@ -90,6 +111,8 @@ export async function runWriting(root, { onFinish } = {}) {
   const meterFill = h('span');
   const meter = h('div', { class: 'write-meter', role: 'progressbar', 'aria-valuemin': '0' }, meterFill);
   const count = h('span', { class: 'write-count small' });
+  // Au-delà de MAX_CHARS, l'IA ne lirait pas la fin du texte : le compteur l'annonce avant la correction.
+  const chars = h('span', { class: 'write-chars small', 'aria-live': 'polite' });
   const updateCount = () => {
     const n = countWords(area.value), goal = topic?.words || 150;
     const ratio = n / goal;
@@ -98,16 +121,22 @@ export async function runWriting(root, { onFinish } = {}) {
     meter.classList.toggle('long', ratio > 1.4);
     meter.setAttribute('aria-valuemax', String(goal)); meter.setAttribute('aria-valuenow', String(n));
     count.textContent = `${n} / ${goal} mots${ratio > 1.4 ? ' · un peu long' : ratio >= 0.8 ? ' · bonne longueur' : ''}`;
+    const c = area.value.trim().length;
+    chars.hidden = c < MAX_CHARS * 0.85;
+    chars.classList.toggle('over', c > MAX_CHARS);
+    chars.textContent = c > MAX_CHARS ? `${c} / ${MAX_CHARS} caractères : trop long pour l’IA, raccourcis ton texte` : `${c} / ${MAX_CHARS} caractères`;
   };
   area.addEventListener('input', () => { updateCount(); saveDraft({ id: topic?.id, text: area.value }); });
 
   const result = h('div', { class: 'feedback', 'aria-live': 'polite' });
   const coach = coachPanel(() => area.value, topicText, { onBusy: busy => {
-    mainBtn.replaceChildren(icon(busy ? 'x' : 'check', 18), busy ? 'Arrêter la correction' : 'Corriger mon essay');
+    mainBtn.replaceChildren(icon(busy ? 'x' : 'check', 18), busy ? 'Arrêter la correction' : 'Corriger mon texte');
     quickBtn.disabled = busy;
   } });
-  const mainBtn = h('button', { class: 'btn primary', type: 'button' }, icon('check', 18), 'Corriger mon essay');
-  const quickBtn = h('button', { class: 'btn ghost', type: 'button', title: 'Orthographe et grammaire en une seconde, sans l’IA' }, 'Vérification rapide');
+  const mainBtn = h('button', { class: 'btn primary', type: 'button', 'aria-describedby': 'write-main-note' }, icon('check', 18), 'Corriger mon texte');
+  const quickBtn = h('button', { class: 'btn ghost write-quick', type: 'button', 'aria-describedby': 'write-quick-note' }, icon('pencil', 18), 'Vérification rapide');
+  // Chaque action avec sa durée, pour choisir en connaissance de cause.
+  const action = (btn, id, note) => h('div', { class: 'write-action' }, btn, h('small', { class: 'muted', id }, note));
 
   // Changer de sujet avec un texte déjà écrit : on demande une confirmation sur le bouton lui-même (pas de fenêtre).
   let confirmTimer = 0;
@@ -143,12 +172,15 @@ export async function runWriting(root, { onFinish } = {}) {
     h('div', { class: 'write-block' }, h('h4', {}, icon('bulb', 15), 'Pour t’aider'), pointsEl),
     helpBlock('book', 'Expressions utiles', usefulEl),
     words.length ? helpBlock('cards', 'Mots de tes leçons',
-      h('div', { class: 'write-chips' }, ...words.map(w => h('span', { class: 'chip', title: `${w.fr} · ${unitMeta(w.uid).title}` }, w.en, h('small', {}, w.fr))))) : null);
+      h('div', { class: 'write-chips' }, ...words.map(w => insertChip(w.en, w.fr, `${w.fr} · ${unitMeta(w.uid)?.title || ''}`)))) : null);
 
   const editor = h('section', { class: 'card write-editor' },
     area,
     h('div', { class: 'write-meter-row' }, meter, count),
-    h('div', { class: 'write-actions' }, mainBtn, quickBtn,
+    chars,
+    h('div', { class: 'write-actions' },
+      action(mainBtn, 'write-main-note', 'IA locale · environ 1 à 2 min'),
+      action(quickBtn, 'write-quick-note', 'Orthographe et grammaire · quelques secondes'),
       h('span', { class: 'muted small write-hint' }, 'Ctrl + Entrée pour corriger')));
 
   root.replaceChildren(
@@ -200,12 +232,12 @@ export async function runWriting(root, { onFinish } = {}) {
       issues.length ? h('div', { class: 'write-marked', html: highlight(area.value, issues) }) : null,
       issues.length ? h('ol', { class: 'gram-list' }, issues.map(it => h('li', {},
         h('span', { class: 'gram-kind' }, it.kindFr),
-        h('strong', {}, `« ${it.text} » `), h('span', {}, it.message),
+        h('strong', {}, `« ${it.text} » `), h('span', { lang: 'en', html: harperMsg(it.message) }),
         it.suggestions.length ? h('div', { class: 'gram-sugg' }, h('span', { class: 'muted small' }, 'Remplacer par :'),
           ...it.suggestions.map(sg => h('button', { class: 'chip chip-btn', type: 'button', onclick: () => {
             area.value = applyFix(area.value, it, sg); check();
           } }, sg || '(supprimer)'))) : null))) : null,
-      h('p', { class: 'muted small' }, 'Harper repère l’orthographe, les accords, les articles et beaucoup d’erreurs de grammaire, mais pas toutes. Pour une correction complète, utilise « Corriger mon essay ».'));
+      h('p', { class: 'muted small' }, 'Harper repère l’orthographe, les accords, les articles et beaucoup d’erreurs de grammaire, mais pas toutes. Pour une correction complète, utilise « Corriger mon texte ».'));
   };
   area.addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); correct(); } });
 }

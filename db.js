@@ -4,7 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
-const DATA_DIR = path.join(__dirname, 'data');
+// TWILIGHT_DATA : autre dossier de données (tests sur une copie de la base).
+const DATA_DIR = process.env.TWILIGHT_DATA ? path.resolve(process.env.TWILIGHT_DATA) : path.join(__dirname, 'data');
 const DB_FILE = path.join(DATA_DIR, 'twilight.db');
 const BACKUPS = path.join(DATA_DIR, 'backups');
 fs.mkdirSync(BACKUPS, { recursive: true });
@@ -57,7 +58,14 @@ function readState() {
   return { ...meta, settings, items, units, days };
 }
 
-const META_KEYS = ['version', 'createdAt', 'savedAt', 'proverbsIntroduced'];
+// Date de la dernière sauvegarde enregistrée (0 si la base est vide).
+function savedAt() {
+  const r = db.prepare("SELECT value FROM meta WHERE key = 'savedAt'").get();
+  return r ? Number(JSON.parse(r.value)) || 0 : 0;
+}
+
+// Clés rangées dans leurs propres tables ; toutes les autres (version, savedAt, stress, writing…) vont dans meta en JSON.
+const TABLE_KEYS = new Set(['settings', 'items', 'units', 'days']);
 const n = v => (v == null ? null : Number(v));
 
 function writeState(s) {
@@ -69,7 +77,7 @@ function writeState(s) {
   db.exec('BEGIN');
   try {
     db.exec('DELETE FROM meta; DELETE FROM settings; DELETE FROM items; DELETE FROM units; DELETE FROM days;');
-    for (const k of META_KEYS) if (s[k] !== undefined) insMeta.run(k, JSON.stringify(s[k]));
+    for (const [k, v] of Object.entries(s)) if (!TABLE_KEYS.has(k) && v !== undefined) insMeta.run(k, JSON.stringify(v));
     for (const [k, v] of Object.entries(s.settings || {})) insSet.run(k, JSON.stringify(v));
     for (const [id, it] of Object.entries(s.items || {})) insItem.run(id, n(it.ef), n(it.interval), n(it.reps), n(it.lapses), n(it.due), n(it.last), n(it.added));
     for (const [id, u] of Object.entries(s.units || {})) insUnit.run(id, n(u.lessonDone), n(u.exDone), n(u.right), n(u.total));
@@ -95,4 +103,4 @@ function dailyBackup() {
   while (files.length > 30) fs.unlinkSync(path.join(BACKUPS, files.shift()));
 }
 
-module.exports = { readState, writeState, dailyBackup, DB_FILE };
+module.exports = { readState, writeState, savedAt, dailyBackup, DB_FILE };

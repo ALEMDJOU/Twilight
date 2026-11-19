@@ -8,7 +8,11 @@ let probe = null;
 
 export function speechAvailable() {
   if (!navigator.mediaDevices?.getUserMedia) return Promise.resolve(false);
-  if (!probe) probe = fetch(MODEL, { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+  // Le cache du Service Worker d'abord (hors ligne, il ignore les requêtes HEAD), puis le serveur.
+  if (!probe) probe = (async () => {
+    try { if ('caches' in window && await caches.match(MODEL)) return true; } catch { /* cache indisponible */ }
+    return fetch(MODEL, { method: 'HEAD' }).then(r => r.ok).catch(() => false);
+  })();
   return probe;
 }
 

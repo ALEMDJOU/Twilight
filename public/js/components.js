@@ -623,6 +623,10 @@ function renderCard(c, onGrade) {
 // Raccourcis clavier : transmis au composant actif (carte ou QCM).
 addEventListener('keydown', e => {
   if (e.target.matches('input, textarea, select')) return;
+  // Espace et Entrée gardent leur rôle normal sur un lien ou un bouton (navigation, « Écouter »…).
+  if ((e.key === ' ' || e.key === 'Enter') && e.target.closest('a, button, summary, [role="button"]')) return;
+  // Raccourcis seulement quand le focus est dans la page de l'exercice, jamais dans la barre de navigation.
+  if (e.target !== document.body && !e.target.closest('main')) return;
   const el = document.querySelector('.stage > *');
   el?._keys?.(e);
 });

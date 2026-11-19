@@ -29,9 +29,18 @@ export function addItem(id, firstDelay = 0) {
   return items[id];
 }
 
+// Révision « hors planning » (bibliothèque, erreurs fréquentes…) d'un élément déjà vu et pas encore dû :
+// une réussite ne change pas son planning (sinon les intervalles gonflent), un échec le fait revenir plus tôt.
+// Les éléments en cours d'apprentissage (intervalle 0) restent toujours notés.
+export function isEarly(it, at = Date.now()) { return !!it && it.last > 0 && it.interval > 0 && it.due > at; }
+const DAYS_LEFT = it => Math.max(1, Math.round((it.due - Date.now()) / DAY));
+const LEARN_MIN = 10; // « Difficile » sur une carte en apprentissage : revient dans 10 min
+
 export function grade(id, q) {
   const it = store.state.items[id] || addItem(id);
-  const wasNew = it.reps === 0;
+  // Nouvelle = jamais révisée (une carte oubliée remise à 0 n'est pas nouvelle).
+  const wasNew = !it.last;
+  if (q !== AGAIN && isEarly(it)) return { item: it, wasNew, early: true };
   if (q === AGAIN) {
     if (it.reps > 0) it.lapses++;
     it.reps = 0;
@@ -39,28 +48,42 @@ export function grade(id, q) {
     it.interval = 0;
     it.due = dueIn(0);
   } else {
-    if (it.reps === 0) {
-      it.interval = q === EASY ? 4 : 1;
-    } else if (it.reps === 1 && it.interval < 3) {
-      it.interval = q === HARD ? 2 : q === GOOD ? 3 : 6;
+    // Intervalles toujours distincts et croissants : Difficile < Bien < Facile.
+    if (it.reps === 0 && q === HARD) {
+      it.interval = 0;
+      it.due = Date.now() + LEARN_MIN * 60 * 1000;
     } else {
-      const mult = q === HARD ? 1.2 : q === GOOD ? it.ef : it.ef * 1.3;
-      it.interval = Math.max(it.interval + 1, Math.round(it.interval * mult));
+      if (it.reps === 0) {
+        it.interval = q === EASY ? 4 : 1;
+      } else if (it.reps === 1 && it.interval < 3) {
+        it.interval = q === HARD ? 2 : q === GOOD ? 3 : 6;
+      } else {
+        const hard = Math.max(it.interval + 1, Math.round(it.interval * 1.2));
+        const good = Math.max(hard + 1, Math.round(it.interval * it.ef));
+        it.interval = q === HARD ? hard : q === GOOD ? good : Math.max(good + 1, Math.round(it.interval * it.ef * 1.3));
+      }
+      it.reps++;
+      it.due = dueIn(it.interval);
     }
     if (q === HARD) it.ef = Math.max(1.3, it.ef - 0.15);
-    if (q === EASY) it.ef = it.ef + 0.15;
-    it.reps++;
-    it.due = dueIn(it.interval);
+    if (q === EASY) it.ef = Math.min(2.8, it.ef + 0.15);
   }
   it.last = Date.now();
   return { item: it, wasNew };
 }
 
 // Les exercices déjà réussis reviennent plus tard (récupération espacée), ratés → demain.
-export function gradeExercise(id, correct) {
+// result : true (réussi), 'hard' (réussi avec une faute de frappe tolérée), false (raté).
+// ef évolue comme pour les cartes, dans des bornes modestes (1,3 – 2,8).
+export function gradeExercise(id, result) {
   const it = store.state.items[id] || addItem(id, 2);
-  if (correct) {
-    it.interval = it.reps === 0 ? Math.max(2, it.interval) : Math.round(Math.max(it.interval, 2) * it.ef);
+  const hard = result === 'hard';
+  if (result && isEarly(it)) return it;
+  if (result) {
+    if (it.reps === 0) it.interval = hard ? 1 : Math.max(2, it.interval);
+    else it.interval = hard ? Math.max(it.interval + 1, Math.round(it.interval * 1.2)) : Math.round(Math.max(it.interval, 2) * it.ef);
+    if (hard) it.ef = Math.max(1.3, it.ef - 0.15);
+    else if (it.reps > 0) it.ef = Math.min(2.8, it.ef + 0.1);
     it.reps++;
     it.due = dueIn(it.interval);
   } else {
@@ -86,8 +109,27 @@ export function dueIds(prefixes, at = Date.now()) {
   return out;
 }
 
+// Raté récemment : exercice faux (reps remis à 0) ou carte réapprise après un oubli (intervalle ≤ 1 j).
+export function isRecentFail(it) {
+  return !!it && it.last > 0 && (it.reps === 0 || (it.lapses > 0 && it.interval <= 1));
+}
+
+// Garde au plus `max` éléments dus : une part (30 %) est réservée aux erreurs récentes (les plus récentes d'abord),
+// pour qu'elles reviennent vite même s'il y a du retard ; le reste suit l'ordre « les plus en retard d'abord ».
+export const FAIL_SHARE = 0.3;
+export function pickDue(ids, max, share = FAIL_SHARE) {
+  if (ids.length <= max) return ids;
+  const items = store.state.items;
+  const fails = ids.filter(id => isRecentFail(items[id]))
+    .sort((a, b) => items[b].last - items[a].last)
+    .slice(0, Math.round(max * share));
+  const kept = new Set(fails);
+  return [...fails, ...ids.filter(id => !kept.has(id)).slice(0, max - fails.length)];
+}
+
 export function intervalLabel(days) {
   if (days <= 0) return '< 1 min';
+  if (days < 1) return `${Math.round(days * 1440)} min`;
   if (days === 1) return '1 j';
   if (days < 30) return `${days} j`;
   if (days < 365) return `${Math.round(days / 30)} mois`;
@@ -100,8 +142,11 @@ export function preview(id) {
   const res = [AGAIN, HARD, GOOD, EASY].map(q => {
     const tmp = saved ? { ...saved } : { ef: 2.5, interval: 0, reps: 0, lapses: 0 };
     store.state.items[id] = tmp;
-    grade(id, q);
-    return store.state.items[id].interval;
+    const { early } = grade(id, q);
+    const it = store.state.items[id];
+    // hors planning : la date prévue ne bouge pas ; en apprentissage : quelques minutes
+    if (early) return DAYS_LEFT(it);
+    return it.interval === 0 && q !== AGAIN ? LEARN_MIN / 1440 : it.interval;
   });
   if (saved) store.state.items[id] = saved; else delete store.state.items[id];
   return res;

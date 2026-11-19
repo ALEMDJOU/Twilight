@@ -1,5 +1,5 @@
 // Révisions libres : toutes les cartes et exercices dus, en dehors de la séance du jour.
-import { h, icon, setMode } from '../ui.js';
+import { h, icon, setMode, pageHeading, staleCheck } from '../ui.js';
 import { store } from '../store.js';
 import { runCards, runExercises } from '../components.js';
 import { dueIds, MASTERED_DAYS } from '../srs.js';
@@ -8,28 +8,36 @@ import { runWriting } from '../writing.js';
 
 export function reviewView(root, params) {
   setMode(null);
-  const holder = h('div');
+  const stale = staleCheck();
+  const holder = pageHeading(h('div'));
   const done = () => { location.hash = '#/review'; };
+  // Sous-pages : lien « ← Révisions » au même endroit que dans l'Accent et les unités, module centré.
+  const back = h('a', { class: 'back', href: '#/review' }, icon('back', 16), 'Révisions');
+  const page = h('div', { class: 'runner-page' }, back, holder);
+  // Le module d'écoute nettoie lui-même micro et minuteries (holder._cleanup).
+  root._cleanup = () => holder._cleanup?.();
   if (params[0] === 'cards') {
-    root.replaceChildren(holder);
+    root.replaceChildren(page);
     return runCards(holder, dueIds(['c:', 'r:']), { title: 'Révision des cartes', subtitle: 'Révisions libres', onFinish: done });
   }
   if (params[0] === 'ex') {
-    root.replaceChildren(holder);
+    root.replaceChildren(page);
     return runExercises(holder, dueIds(['x:']).slice(0, 30), { title: 'Révision des exercices', subtitle: 'Révisions libres', onFinish: done });
   }
   if (params[0] === 'listening' || params[0] === 'speaking') {
-    root.replaceChildren(holder);
+    root.replaceChildren(page);
     const speakOnly = params[0] === 'speaking';
+    holder.replaceChildren(h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Préparation des phrases…')));
     return buildListening(speakOnly ? { dictation: 0, choice: 0, speaking: 10 } : { dictation: 8, choice: 4, speaking: 0 })
-      .then(items => runListening(holder, items, { title: speakOnly ? 'Prononciation' : 'Écoute et dictée', subtitle: 'Révisions libres', onFinish: done }));
+      .then(items => { if (!stale()) runListening(holder, items, { title: speakOnly ? 'Prononciation' : 'Écoute et dictée', subtitle: 'Révisions libres', onFinish: done }); });
   }
   if (params[0] === 'writing') {
-    root.replaceChildren(holder);
+    // L'écriture garde sa propre mise en page (writing.css) : seulement le lien retour.
+    root.replaceChildren(back, holder);
     return runWriting(holder, { onFinish: done });
   }
   if (params[0] === 'mistakes') {
-    root.replaceChildren(holder);
+    root.replaceChildren(page);
     const hard = Object.entries(store.state.items).filter(([, it]) => it.lapses > 0).sort((a, b) => b[1].lapses - a[1].lapses).map(([id]) => id);
     const cards = hard.filter(id => !id.startsWith('x:')), ex = hard.filter(id => id.startsWith('x:'));
     return ex.length
@@ -54,11 +62,11 @@ export function reviewView(root, params) {
       h('div', { class: 'kpi card amber' }, h('div', { class: 'kpi-ic' }, icon('star', 20)), h('strong', {}, `${mastered} / ${total}`), h('span', {}, `cartes maîtrisées (${learning} en cours)`))),
     h('div', { class: 'grid-3' },
       action('cards', 'Réviser les cartes', `${cardsDue} carte${cardsDue > 1 ? 's' : ''} due${cardsDue > 1 ? 's' : ''}`, '#/review/cards', cardsDue),
-      action('pencil', 'Réviser les exercices', `${exDue} exercice${exDue > 1 ? 's' : ''} dû${exDue > 1 ? 's' : ''}`, '#/review/ex', exDue),
+      action('pencil', 'Réviser les exercices', `${exDue} exercice${exDue > 1 ? 's' : ''} ${exDue > 1 ? 'dus' : 'dû'}`, '#/review/ex', exDue),
       action('target', 'Mes erreurs fréquentes', 'Retravailler ce qui résiste', '#/review/mistakes', 1),
       action('sound', 'Écoute et dictée', 'Écrire ce que dit la voix anglaise', '#/review/listening', 1),
-      action('play', 'Prononciation', 'Répéter des phrases au micro (hors ligne)', '#/review/speaking', 1),
-      action('pencil', 'Expression écrite', 'Écrire un texte, corrigé hors ligne', '#/review/writing', 1)));
+      action('mic', 'Prononciation', 'Répéter des phrases au micro (hors ligne)', '#/review/speaking', 1),
+      action('note', 'Expression écrite', 'Écrire un texte, corrigé hors ligne', '#/review/writing', 1)));
 }
 
 function action(ic, title, sub, href, n) {

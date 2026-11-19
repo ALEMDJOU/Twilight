@@ -14,7 +14,8 @@ export const BOOKS = [
 export const bookByCode = Object.fromEntries(BOOKS.map(b => [b.code, b]));
 export const bookByKey = Object.fromEntries(BOOKS.map(b => [b.key, b]));
 
-const cache = new Map();
+const cache = new Map();     // unités chargées (lues sans attendre par cardData / exerciseData)
+const loading = new Map();   // chargements en cours : deux demandes de la même unité partagent un seul fetch
 let catalog = null, available = new Set(), proverbs = [], images = {};
 
 export async function initContent() {
@@ -29,17 +30,21 @@ export async function initContent() {
   available = new Set(idx.units);
   proverbs = p.items;
   // Précharge les unités déjà commencées pour pouvoir afficher leurs cartes en révision.
-  const started = new Set(Object.keys(store.state.units));
-  for (const id of Object.keys(store.state.items)) {
+  // Une unité absente ou illisible (hors ligne, fichier manquant) ne bloque pas le démarrage : ses cartes sont ignorées.
+  const started = new Set(Object.keys(store.state.units || {}));
+  for (const id of Object.keys(store.state.items || {})) {
     const u = id.split(':')[1];
-    if (u !== 'p') started.add(u);
+    if (u && u !== 'p') started.add(u);
   }
-  await Promise.all([...started].filter(u => available.has(u)).map(loadUnit));
+  const res = await Promise.allSettled([...started].filter(u => available.has(u)).map(loadUnit));
+  const failed = res.filter(r => r.status === 'rejected').length;
+  if (failed) console.warn(`Twilight : ${failed} unité(s) indisponible(s) pour l'instant.`);
 }
 
+// Identifiant d'unité (g12, vi5…) → { code, n }, ou null s'il est invalide (lien abîmé, ancienne URL).
 export function splitUnitId(uid) {
-  const m = uid.match(/^([a-z]+)(\d+)$/);
-  return { code: m[1], n: Number(m[2]) };
+  const m = String(uid ?? '').match(/^([a-z]+)(\d+)$/);
+  return m ? { code: m[1], n: Number(m[2]) } : null;
 }
 
 export function unitList(bookKey) {
@@ -47,21 +52,29 @@ export function unitList(bookKey) {
   return (catalog[bookKey] || []).map(u => ({ ...u, id: b.code + u.n, available: available.has(b.code + u.n) }));
 }
 
+// Infos d'une unité, ou null si l'identifiant ne correspond à aucune unité du catalogue.
 export function unitMeta(uid) {
-  const { code, n } = splitUnitId(uid);
-  const b = bookByCode[code];
-  const u = catalog[b.key].find(x => x.n === n);
+  const id = splitUnitId(uid);
+  const b = id && bookByCode[id.code];
+  const u = b && (catalog?.[b.key] || []).find(x => x.n === id.n);
+  if (!u) return null;
   return { ...u, id: uid, book: b, available: available.has(uid) };
 }
 
-export function isAvailable(uid) { return available.has(uid); }
 export function availableCount(bookKey) { return unitList(bookKey).filter(u => u.available).length; }
 
-export async function loadUnit(uid) {
-  if (cache.has(uid)) return cache.get(uid);
-  const data = await fetch(`content/units/${uid}.json`).then(r => r.json());
-  cache.set(uid, data);
-  return data;
+export function loadUnit(uid) {
+  if (cache.has(uid)) return Promise.resolve(cache.get(uid));
+  if (!/^[a-z]+\d+$/.test(uid)) return Promise.reject(new Error(`unité inconnue : ${uid}`));
+  if (!loading.has(uid)) {
+    const p = fetch(`content/units/${uid}.json`).then(r => {
+      if (!r.ok) throw new Error(`unité ${uid} : HTTP ${r.status}`);
+      return r.json();
+    }).then(data => { cache.set(uid, data); return data; })
+      .finally(() => loading.delete(uid));   // échec : on pourra réessayer plus tard
+    loading.set(uid, p);
+  }
+  return loading.get(uid);
 }
 export function unitCached(uid) { return cache.get(uid); }
 

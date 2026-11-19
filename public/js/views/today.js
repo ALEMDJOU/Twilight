@@ -1,5 +1,5 @@
 // Séance du jour : enchaîne les étapes du plan (révisions → leçon → exercices → révision mélangée → proverbes → cartes).
-import { h, icon, setMode, fmtMin, speakBtn, rich } from '../ui.js';
+import { h, icon, setMode, fmtMin, speakBtn, rich, staleCheck } from '../ui.js';
 import { store, today } from '../store.js';
 import { loadUnit, unitMeta, getProverbs } from '../content.js';
 import { renderLesson, runExercises, runCards, lessonAnchors } from '../components.js';
@@ -16,10 +16,15 @@ function pendingList() {
   if (!list.length) return null;
   return h('div', { class: 'pending-days' },
     h('h3', {}, 'À terminer'),
-    ...list.map(p => h('a', { href: `#/today/${p.key}` },
-      h('span', {}, `Séance du ${fmtDay(p.key)}`),
-      h('span', {}, `${p.left} étape${p.left > 1 ? 's' : ''}`))));
+    ...list.map(p => h('a', { href: `#/today/${p.key}`, title: `Reprendre la séance du ${fmtDay(p.key)}` },
+      h('span', { class: 'sr-only' }, 'Séance du '),
+      `${fmtShort(p.key)} · ${p.left} étape${p.left > 1 ? 's' : ''}`)));
 }
+// « Sam. 14 nov. » : tient sur une ligne dans la colonne.
+const fmtShort = k => {
+  const s = new Date(k + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
 
 export function todayView(root, params) {
   // #/today/<étape> pour aujourd'hui, ou #/today/AAAA-MM-JJ[/<étape>] pour reprendre un jour passé.
@@ -30,8 +35,9 @@ export function todayView(root, params) {
   const dayRec = dayRecord(dayKey);
   const stepper = h('ol', { class: 'stepper' });
   const main = h('div', { class: 'session-main' });
+  const stale = staleCheck();
   root.replaceChildren(h('div', { class: 'session' }, h('aside', { class: 'session-side card' },
-    h('h2', {}, dayKey ? `Séance du ${fmtDay(dayKey)}` : 'Séance du jour', dayKey ? h('span', { class: 'catchup-badge' }, 'rattrapage') : null),
+    h('h1', {}, dayKey ? `Séance du ${fmtDay(dayKey)}` : 'Séance du jour', dayKey ? h('span', { class: 'catchup-badge' }, 'rattrapage') : null),
     h('p', { class: 'muted small' }, `Objectif : ${fmtMin(plan.minutes * 60)}`),
     h('div', { class: 'today-time muted small' }),
     stepper,
@@ -41,7 +47,9 @@ export function todayView(root, params) {
   const tick = () => { const t = today().time; timeEl.textContent = `Temps actif aujourd’hui : ${fmtMin(t.lesson + t.exercise + t.cards)}`; };
   tick();
   document.addEventListener('tick', tick);
-  root._cleanup = () => document.removeEventListener('tick', tick);
+  // En quittant la page : arrête le compteur et libère le module en cours (micro, lectures différées).
+  root._cleanup = () => { document.removeEventListener('tick', tick); main._cleanup?.(); main._cleanup = null; };
+  let stepGen = 0; // étape affichée : une étape lente (chargement) ne remplace pas celle choisie entre-temps
 
   let current = stepParam != null ? Number(stepParam) : plan.steps.findIndex(s => !s.done);
 
@@ -71,6 +79,9 @@ export function todayView(root, params) {
   }
 
   async function runStep(step, i) {
+    main._cleanup?.(); main._cleanup = null;
+    const my = ++stepGen;
+    const gone = () => stale() || my !== stepGen; // à vérifier après chaque await
     const info = stepInfo(step);
     const sub = `Étape ${i + 1} / ${plan.steps.length}`;
     if (step.type === 'warmup') {
@@ -78,6 +89,7 @@ export function todayView(root, params) {
     } else if (step.type === 'lesson') {
       setMode('lesson');
       const unit = await loadUnit(step.uid);
+      if (gone()) return;
       const meta = unitMeta(step.uid);
       const lesson = renderLesson(unit, meta);
       main.replaceChildren(h('div', { class: 'eyebrow' }, sub), lesson,
@@ -88,6 +100,7 @@ export function todayView(root, params) {
       if (nav) lesson.before(nav);
     } else if (step.type === 'unit-ex') {
       const ids = await unitExercises(step.uid);
+      if (gone()) return;
       runExercises(main, ids, { title: info.title, subtitle: sub, onFinish: ({ right, total }) => { markUnitExercises(step.uid, right, total); complete(i); } });
     } else if (step.type === 'review-ex') {
       const ids = reviewExercises(plan);
@@ -99,6 +112,7 @@ export function todayView(root, params) {
     } else if (step.type === 'listening') {
       main.replaceChildren(h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Préparation des phrases…')));
       const items = await buildListening();
+      if (gone()) return;
       runListening(main, items, { title: info.title, subtitle: sub, onFinish: () => complete(i) });
     } else if (step.type === 'stress') {
       runStressQuiz(main, dailyStressWords(), { title: info.title, subtitle: sub, listenFirst: false, onFinish: () => complete(i) });
@@ -127,6 +141,7 @@ export function todayView(root, params) {
   }
 
   function finished() {
+    stepGen++; main._cleanup?.(); main._cleanup = null;
     setMode(null);
     confetti(1.4);
     if (dayKey) {

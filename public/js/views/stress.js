@@ -31,10 +31,13 @@ const words = list => h('div', { class: 'st-words' }, list.map(wordChip));
 function ruleSection(rule, n) {
   const qs = quizWords(rule);
   const best = scores()[rule.id]?.best;
-  return h('section', { class: 'card st-rule', id: `st-${rule.id}` },
-    h('div', { class: 'eyebrow' }, `Règle ${n}`),
-    h('h2', {}, rule.title),
-    h('p', { class: 'st-title-fr' }, rule.titleFr),
+  // Règle repliable : la page reste courte, on ouvre seulement ce qu'on étudie.
+  return h('details', { class: 'card st-rule', id: `st-${rule.id}` },
+    h('summary', {},
+      h('span', { class: 'eyebrow' }, `Règle ${n}`),
+      h('h2', {}, rule.title),
+      h('span', { class: 'st-title-fr' }, rule.titleFr),
+      best != null ? h('span', { class: 'pill done st-best' }, `Meilleur score : ${best} %`) : null),
     h('p', { html: rich(rule.en) }),
     frBlock(rule.fr, 'En français'),
     ...(rule.groups || []).map(g => h('div', { class: 'st-group' }, h('h3', {}, g.label), words(g.words))),
@@ -63,10 +66,25 @@ function overview(root) {
       h('a', { class: 'btn primary', href: '#/stress/quiz/all' }, icon('target', 18), 'Test général', icon('arrow', 18)),
       scores().all?.best != null ? h('span', { class: 'muted small' }, `Meilleur score : ${scores().all.best} %`) : null));
   const nav = anchorNav([['Introduction', intro], ...STRESS_RULES.map((r, i) => [r.short, sections[i]])], { label: 'Règles' });
+  // Tout déplier / tout replier d'un clic.
+  const allBtn = h('button', { type: 'button', class: 'btn ghost st-all', 'aria-expanded': 'false', onclick: () => {
+    const open = sections.some(s => !s.open);
+    sections.forEach(s => { s.open = open; });
+    syncAll();
+  } });
+  const syncAll = () => {
+    const allOpen = sections.every(s => s.open);
+    allBtn.setAttribute('aria-expanded', String(allOpen));
+    allBtn.replaceChildren(allOpen ? 'Tout replier' : 'Tout déplier');
+  };
+  sections.forEach(s => s.addEventListener('toggle', syncAll));
+  syncAll();
   root.replaceChildren(
     h('h1', { class: 'page-title' }, 'Accent tonique'),
     h('p', { class: 'muted' }, 'Sur quelle syllabe appuyer ? Les règles, leurs exceptions, et un entraînement à l’oreille.'),
-    nav, intro, ...sections);
+    nav, intro,
+    h('div', { class: 'st-rules-head' }, h('h2', {}, `${sections.length} règles`), h('span', { class: 'muted small' }, 'Clique sur une règle pour l’ouvrir.'), allBtn),
+    ...sections);
 }
 
 // Mots de la séance du jour : d'abord ceux ratés la dernière fois, puis les nouveaux, puis les plus anciens.
@@ -95,11 +113,12 @@ export function runStressQuiz(root, items, { title, subtitle = '', listenFirst =
   const stage = h('div', { class: 'st-stage' });
   const bar = h('div', { class: 'progress' }, h('span'));
   const count = h('span', { class: 'runner-count' });
-  root.replaceChildren(...[
-    back ? h('a', { class: 'back', href: back[0] }, icon('back', 16), back[1]) : null,
+  // Page autonome (avec lien retour) : le titre est le h1 de la page ; dans la séance, un h2.
+  const parts = [
     subtitle ? h('div', { class: 'eyebrow' }, subtitle) : null,
-    h('div', { class: 'runner-head' }, h('h2', {}, title), count),
-    bar, stage].filter(Boolean));
+    h('div', { class: 'runner-head' }, h(back ? 'h1' : 'h2', {}, title), count),
+    bar, stage].filter(Boolean);
+  root.replaceChildren(back ? h('div', { class: 'runner-page' }, h('a', { class: 'back', href: back[0] }, icon('back', 16), back[1]), ...parts) : null, ...(back ? [] : parts));
 
   let keys = null;
   const onKey = e => {

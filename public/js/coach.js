@@ -10,16 +10,29 @@ const ERRORS = {
   'engine-timeout': 'Le moteur a mis plus de 3 minutes à démarrer : ton PC est sans doute très occupé. Ferme les programmes lourds, puis réessaie.',
   'engine-exited': 'Le moteur s’est arrêté au démarrage : la mémoire est peut-être pleine. Ferme quelques onglets ou programmes, puis réessaie.',
   'not-installed': 'L’IA locale n’est pas installée : lance une fois « npm run setup:ai » dans le dossier Twilight.',
+  'engine-error': 'Le moteur de l’IA ne répond plus : il s’est peut-être arrêté (mémoire pleine ?). Réessaie dans un instant.',
+  'engine-busy': 'Le moteur de l’IA a refusé la demande (il est peut-être occupé ou ton texte est trop long). Réessaie dans un instant.',
+  'incomplete': 'La réponse de l’IA a été coupée avant la fin. Réessaie : ton texte n’a pas été modifié.',
+  'empty': 'L’IA n’a renvoyé aucun texte. Réessaie dans un instant.',
 };
+const errorText = m => ERRORS[m] || (/^engine-http-/.test(m) ? ERRORS['engine-busy'] : `L’IA locale n’a pas pu répondre (${m || 'erreur'}).`);
 
 const LEVEL = 'B2';
+// Longueur maximale lue par le serveur (ai.js coupe au-delà) : on la fait respecter ici, avec un message clair.
+export const MAX_CHARS = 4000;
+// Marque de fin envoyée par le serveur quand le modèle a fini normalement (ai.js, END).
+const END = '\u0004';
 
-let statusCache = null;
+// On ne garde en mémoire que « installée » (30 s, pour que « moteur lancé » reste à jour) :
+// une IA installée pendant que l'app est ouverte est vue sans recharger la page.
+let statusCache = null, statusAt = 0;
 export async function aiStatus() {
-  if (statusCache) return statusCache;
-  try { statusCache = await fetch('/api/ai', { cache: 'no-store' }).then(r => r.json()); }
-  catch { return { installed: false, offline: true }; }
-  return statusCache;
+  if (statusCache && Date.now() - statusAt < 30000) return statusCache;
+  try {
+    const st = await fetch('/api/ai', { cache: 'no-store' }).then(r => r.json());
+    if (st.installed) { statusCache = st; statusAt = Date.now(); } else statusCache = null;
+    return st;
+  } catch { return { installed: false, offline: true }; }
 }
 
 const clean = s => s.replace(/<think>[\s\S]*?(<\/think>|$)/g, '').replace(/^\s*(#{1,4}\s*)?corrected( text)?\s*:?\s*\n/i, '').trim();
@@ -39,22 +52,32 @@ const tokens = s => s.match(/\s+|[^\s]+/g) || [];
 const blank = t => /^\s+$/.test(t);
 
 // Différences mot à mot (plus longue sous-suite commune) : liste d'opérations ['=' | '-' | '+', texte].
+// Le début et la fin identiques sont mis de côté avant le calcul ; la table (Uint16) reste petite :
+// 4 000 caractères ≈ 1 500 éléments par texte ≈ 2,3 millions de cases (≈ 5 Mo, quelques millisecondes).
+const MAX_CELLS = 12e6;
 function diff(before, after) {
   const a = tokens(before), b = tokens(after);
-  if (a.length * b.length > 400000) return [['+', after]];
-  const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
-  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--)
-    dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  const ops = [];
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let s = 0;
+  while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+  const head = a.slice(0, p).map(t => ['=', t]), tail = a.slice(a.length - s).map(t => ['=', t]);
+  const A = a.slice(p, a.length - s), B = b.slice(p, b.length - s);
+  // Cas extrême (texte très long et entièrement réécrit) : tout l'ancien barré, tout le nouveau ajouté.
+  if ((A.length + 1) * (B.length + 1) > MAX_CELLS) return [...head, ...(A.length ? [['-', A.join('')]] : []), ...(B.length ? [['+', B.join('')]] : []), ...tail];
+  const dp = Array.from({ length: A.length + 1 }, () => new Uint16Array(B.length + 1));
+  for (let i = A.length - 1; i >= 0; i--) for (let j = B.length - 1; j >= 0; j--)
+    dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const ops = head;
   let i = 0, j = 0;
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) { ops.push(['=', a[i]]); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) ops.push(['-', a[i++]]);
-    else ops.push(['+', b[j++]]);
+  while (i < A.length && j < B.length) {
+    if (A[i] === B[j]) { ops.push(['=', A[i]]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) ops.push(['-', A[i++]]);
+    else ops.push(['+', B[j++]]);
   }
-  while (i < a.length) ops.push(['-', a[i++]]);
-  while (j < b.length) ops.push(['+', b[j++]]);
-  return ops;
+  while (i < A.length) ops.push(['-', A[i++]]);
+  while (j < B.length) ops.push(['+', B[j++]]);
+  return ops.concat(tail);
 }
 
 function diffHtml(ops) {
@@ -119,30 +142,37 @@ const fmt = sec => sec < 60 ? `${sec} s` : `${Math.floor(sec / 60)} min ${String
 const MAX_FIXES = 8;   // au-delà, les corrections suivantes sont repliées
 
 // Panneau à placer sous la zone d'écriture. getText() renvoie l'essay, getTopic() le sujet.
-// Pas de bouton ici : l'appelant a son bouton « Corriger mon essay », qui appelle panel.run()
+// Pas de bouton ici : l'appelant a son bouton « Corriger mon texte », qui appelle panel.run()
 // (et l'arrête si une correction est en cours) ; onBusy(true|false) l'avertit du début et de la fin.
 export function coachPanel(getText, getTopic, { onBusy } = {}) {
   const status = h('div', { class: 'ai-status' });
   const out = h('div', { class: 'ai-out' });
   const live = h('p', { class: 'ai-sr', 'aria-live': 'polite' });   // annonces aux changements d'étape seulement
   const panel = h('div', { class: 'ai-coach', hidden: true }, status, out, live);
-  let ctrl = null, starting = false, nav = null;
+  let ctrl = null, starting = false, nav = null, startedAt = 0;
   const announce = msg => { live.textContent = msg; };
   const setBusy = b => { try { onBusy?.(b); } catch {} };
 
   // Une étape : renvoie le texte complet, en appelant onText à chaque morceau reçu.
+  // Échec (au lieu d'un texte vide ou tronqué pris pour une vraie correction) si le serveur répond une erreur,
+  // si la marque de fin manque (flux coupé) ou si la réponse est vide.
   const stream = async (body, onText) => {
     const r = await fetch('/api/ai/coach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) throw new Error((await r.text().catch(() => '')).trim().slice(0, 80) || `HTTP ${r.status}`);
     const reader = r.body.getReader(), dec = new TextDecoder();
     let raw = '', frame = 0;
+    const visible = () => raw.replaceAll(END, '');
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
       raw += dec.decode(value, { stream: true });
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; onText(raw); });
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; onText(visible()); });
     }
+    raw += dec.decode();
     cancelAnimationFrame(frame);
+    if (!raw.endsWith(END)) throw new Error('incomplete');
+    raw = visible();
+    if (!clean(raw)) throw new Error('empty');
     onText(raw);
     return raw;
   };
@@ -153,11 +183,15 @@ export function coachPanel(getText, getTopic, { onBusy } = {}) {
   const heading = (ic, text) => h('h3', { tabindex: '-1' }, icon(ic, 18), text);
 
   panel.run = async () => {
+    // Un double-clic ne doit pas lancer puis arrêter aussitôt : on ignore les clics des 600 ms qui suivent le lancement.
+    if (Date.now() - startedAt < 600) return;
     if (ctrl) { ctrl.abort(); return; }
     if (starting) return;   // évite un double lancement pendant la vérification du moteur
     const text = getText().trim();
     const nWords = text.split(/\s+/).filter(Boolean).length;
     if (nWords < 3) return toast('Écris au moins une phrase complète.');
+    if (text.length > MAX_CHARS) return toast(`Ton texte est trop long pour l’IA locale (${text.length} caractères, maximum ${MAX_CHARS}) : raccourcis-le ou corrige-le en deux fois.`, 'warn');
+    startedAt = Date.now();
     starting = true;
     let st;
     try { st = await aiStatus(); } finally { starting = false; }
@@ -294,7 +328,7 @@ export function coachPanel(getText, getTopic, { onBusy } = {}) {
         }
       };
       await stream({ stage: 'coach', text, corrected, topic: getTopic(), level: LEVEL }, raw => render(raw, false)).then(raw => render(raw, true));
-      statusCache = { ...st, running: true };
+      statusCache = { ...st, running: true }; statusAt = Date.now();
 
       // Fin : toutes les étapes cochées, raccourcis vers les blocs, focus sur le texte corrigé.
       advance(STEPS.length);
@@ -322,7 +356,7 @@ export function coachPanel(getText, getTopic, { onBusy } = {}) {
         status.append(h('div', { class: 'ai-msg info' }, h('p', {}, 'Ce qui est déjà arrivé reste affiché ci-dessous.'), retryBtn()));
         announce('Correction arrêtée.');
       } else {
-        status.append(h('div', { class: 'ai-msg', role: 'alert' }, h('p', {}, ERRORS[e.message] || `L’IA locale n’a pas pu répondre (${e.message || 'erreur'}).`), retryBtn()));
+        status.append(h('div', { class: 'ai-msg', role: 'alert' }, h('p', {}, errorText(e.message)), retryBtn()));
       }
       if (stopFocused) title.focus();   // le bouton « Arrêter » a disparu : on garde le focus dans le panneau
     } finally {

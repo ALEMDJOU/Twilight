@@ -132,6 +132,14 @@ export function runListening(root, items, { title = 'Écoute et prononciation', 
   const stage = h('div', { class: 'stage' });
   root.replaceChildren(head, bar, stage);
   let i = 0, right = 0;
+  // Ressources à libérer si on quitte la page en cours de route : minuteries de lecture, micro en écoute.
+  const live = { timers: new Set(), session: null, gone: false };
+  root._cleanup = () => {
+    live.gone = true;
+    live.timers.forEach(clearTimeout); live.timers.clear();
+    const s = live.session; live.session = null;
+    s?.stop().catch(() => {}); // coupe le micro et ferme l'AudioContext
+  };
 
   if (!items.length) {
     stage.replaceChildren(h('div', { class: 'card done-card' }, h('h2', {}, title),
@@ -145,7 +153,7 @@ export function runListening(root, items, { title = 'Écoute et prononciation', 
     head.querySelector('.runner-count').textContent = `${i + 1} / ${items.length}`;
     bar.firstChild.style.width = `${(i / items.length) * 100}%`;
     const it = items[i++];
-    stage.replaceChildren(render(it, ok => { const d = today(); ok ? (right++, d.right++) : d.wrong++; store.save(); }, next));
+    stage.replaceChildren(render(it, ok => { const d = today(); ok ? (right++, d.right++) : d.wrong++; store.save(); }, next, live));
   };
 
   const finish = () => {
@@ -169,8 +177,10 @@ function playButtons(text) {
   return h('div', { class: 'listen-actions' }, mk('Écouter', undefined, 'sound'), mk('Plus lentement', 0.7, 'clock'));
 }
 
-function render(it, onResult, onNext) {
+function render(it, onResult, onNext, rt) {
   const box = h('div', { class: 'card exercise listening' });
+  // Lecture différée, annulée si on quitte la page avant.
+  const later = fn => { const t = setTimeout(() => { rt.timers.delete(t); if (!rt.gone) fn(); }, 250); rt.timers.add(t); };
   const meta = unitMeta(it.uid);
   box.append(h('div', { class: 'ex-top' }, h('div', { class: 'ex-source' }, `${meta.book.short} · Unité ${meta.n}`)));
   const feedback = h('div', { class: 'feedback', 'aria-live': 'polite' });
@@ -192,7 +202,7 @@ function render(it, onResult, onNext) {
 
   if (it.t === 'dictation') {
     box.append(h('p', { class: 'ex-instr' }, 'Écoute la phrase et écris-la.'), h('p', { class: 'ex-instr-fr' }, 'Tu peux la réécouter autant de fois que tu veux.'), playButtons(it.text));
-    const inp = h('input', { class: 'write-input', type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'Écris ce que tu entends…' });
+    const inp = h('input', { class: 'write-input', type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: 'Écris ce que tu entends…', 'aria-label': 'Phrase entendue, à écrire en anglais' });
     const check = () => {
       if (!inp.value.trim()) return inp.focus();
       const cmp = compareWords(it.text, inp.value);
@@ -203,7 +213,7 @@ function render(it, onResult, onNext) {
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); check(); } });
     box.append(h('div', { class: 'ex-body' }, inp));
     actions.append(h('button', { class: 'btn primary', onclick: check }, 'Vérifier', icon('check', 18)));
-    setTimeout(() => { speak(it.text); inp.focus(); }, 250);
+    later(() => { speak(it.text); inp.focus(); });
   } else if (it.t === 'choice') {
     box.append(h('p', { class: 'ex-instr' }, 'Qu’as-tu entendu ?'), playButtons(it.text));
     const opts = h('div', { class: 'options' });
@@ -215,7 +225,7 @@ function render(it, onResult, onNext) {
       conclude(ok, null);
     } }, h('span', { class: 'key' }, String(n + 1)), h('span', {}, o))));
     box.append(h('div', { class: 'ex-body' }, opts));
-    setTimeout(() => speak(it.text), 250);
+    later(() => speak(it.text));
   } else if (it.t === 'speak') {
     // Prononciation : autant d'essais que tu veux. L'exercice est réussi dès qu'un essai est bon ;
     // « Passer » le compte comme raté. Après une réussite, tu peux encore t'entraîner.
@@ -223,31 +233,39 @@ function render(it, onResult, onNext) {
       h('p', { class: 'ex-q speak-target', html: rich(it.text) }), playButtons(it.text));
     const live = h('p', { class: 'speak-live muted' }, '');
     const tries = h('div', { class: 'speak-tries', 'aria-live': 'polite' });
-    const mic = h('button', { class: 'btn amber mic', type: 'button' }, icon('play', 18), h('span', {}, 'Parler'));
+    const mic = h('button', { class: 'btn amber mic', type: 'button' }, icon('mic', 18), h('span', {}, 'Parler'));
     const label = t => { mic.lastChild.textContent = t; };
     let session = null, attempt = 0, best = 0;
+    // Le micro en cours est aussi connu du module (rt.session) pour être coupé si on quitte la page.
+    const setSession = s => { session = s; rt.session = s; };
     const skip = h('button', { class: 'btn ghost', type: 'button', onclick: async () => {
       if (answered) return;
-      if (session) { await session.stop(); session = null; }
+      if (session) { const s = session; setSession(null); await s.stop(); }
       conclude(false, h('p', { class: 'small muted' }, attempt ? 'Exercice passé : il reviendra pour t’entraîner encore.' : 'Exercice passé.'));
-      mic.remove();
+      ctl.remove();
     } }, 'Passer');
+    // Parler et Passer côte à côte.
+    const ctl = h('div', { class: 'speak-ctl' }, mic, skip);
     mic.onclick = async () => {
       if (!session) {
         mic.disabled = true; live.textContent = 'Préparation du micro…';
         try {
-          session = await listen(it.text, t => { live.textContent = t ? `« ${t} »` : 'Je t’écoute…'; });
+          const s = await listen(it.text, t => { live.textContent = t ? `« ${t} »` : 'Je t’écoute…'; });
+          if (rt.gone) { s.stop().catch(() => {}); return; } // page quittée pendant la préparation
+          setSession(s);
           mic.disabled = false; mic.classList.add('recording'); label('J’ai fini');
           live.textContent = 'Je t’écoute…';
         } catch (e) {
-          mic.disabled = false; session = null;
+          mic.disabled = false; setSession(null);
           live.textContent = e?.name === 'NotAllowedError' ? 'Micro refusé : autorise-le dans Chrome (icône à gauche de l’adresse).' : 'Micro ou reconnaissance vocale indisponible.';
         }
         return;
       }
       mic.disabled = true; live.textContent = 'Analyse…';
-      const said = await session.stop();
-      session = null; mic.classList.remove('recording'); mic.disabled = false;
+      const s = session; setSession(null);
+      const said = await s.stop();
+      if (rt.gone) return;
+      mic.classList.remove('recording'); mic.disabled = false;
       attempt++;
       const strict = compareWords(it.text, said.strict), guided = compareWords(it.text, said.guided);
       const lvl = pronunciationLevel(strict.score, guided.score);
@@ -263,14 +281,13 @@ function render(it, onResult, onNext) {
       label(lvl.ok ? 'Recommencer pour m’entraîner' : 'Réessayer');
       if (lvl.ok && !answered) {
         conclude(true, h('p', { class: 'small muted' }, attempt > 1 ? `Réussi au ${attempt}e essai. Bravo pour ta persévérance !` : 'Réussi du premier coup !'));
-        actions.prepend(mic);
+        skip.remove(); // réussi : « Passer » n'a plus de sens, le micro reste pour s'entraîner
       } else if (!answered) {
         tries.prepend(h('p', { class: 'small speak-hint' }, 'Réécoute le modèle (tu peux le ralentir), puis réessaie autant de fois que tu veux.'));
       }
     };
-    box.append(h('div', { class: 'ex-body' }, mic, live, tries));
-    actions.append(skip);
-    setTimeout(() => speak(it.text), 250);
+    box.append(h('div', { class: 'ex-body' }, ctl, live, tries));
+    later(() => speak(it.text));
   }
   box.append(feedback, actions);
   return box;

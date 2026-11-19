@@ -5,12 +5,14 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const net = require('net');
-const { spawn, execFileSync } = require('child_process');
+const { spawn, execFile } = require('child_process');
 
 const DIR = path.join(__dirname, 'models');
 const MODEL = path.join(DIR, 'Qwen3-1.7B-Q4_K_M.gguf');
 const IDLE_MS = 10 * 60 * 1000;
 const THREADS = Number(process.env.AI_THREADS) || 4;   // mesuré sur un i5-7200U : 4 threads ≈ 14 jetons/s, 2 threads ≈ 12
+// Marque de fin envoyée au navigateur quand le modèle a fini normalement : sans elle, la réponse est incomplète.
+const END = '\u0004';
 
 // port : choisi libre à chaque démarrage, pour que deux copies de Twilight ne partagent jamais le même moteur.
 let child = null, ready = null, idleTimer = null, busy = 0, port = 0;
@@ -57,11 +59,16 @@ function touch() {
 
 // Si Twilight a été fermé brutalement, son llama-server a pu rester ouvert. On n'arrête que les orphelins :
 // notre llama-server.exe (même chemin) dont le processus parent n'existe plus.
-function killOrphans(exe) {
-  if (process.platform !== 'win32') return;
+// Une seule fois, au lancement de Twilight, sans bloquer le serveur (PowerShell met plusieurs secondes à démarrer).
+function killOrphans() {
+  const exe = findServer();
+  if (process.platform !== 'win32' || !exe) return Promise.resolve();
   const ps = `Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" | Where-Object { $_.ExecutablePath -eq '${exe.replace(/'/g, "''")}' -and -not (Get-Process -Id $_.ParentProcessId -ErrorAction SilentlyContinue) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
-  try { execFileSync('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true, stdio: 'ignore', timeout: 15000 }); } catch { /* rien à arrêter */ }
+  return new Promise(resolve => {
+    try { execFile('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true, timeout: 15000 }, () => resolve()); } catch { resolve(); }
+  });
 }
+const orphans = killOrphans();
 
 // Démarre llama-server si besoin et attend qu'il ait chargé le modèle.
 function ensure() {
@@ -69,11 +76,16 @@ function ensure() {
   const exe = findServer();
   if (!exe || !fs.existsSync(MODEL)) return Promise.reject(new Error('not-installed'));
   ready = (async () => {
-    killOrphans(exe);
+    await orphans;   // nettoyage lancé au démarrage de Twilight (déjà fini en général)
     port = await freePort();
-    const me = child = spawn(exe, ['-m', MODEL, '--host', '127.0.0.1', '--port', String(port), '-c', '4096', '-t', String(THREADS), '-ngl', '0', '--no-webui'],
+    // -np 1 : un seul emplacement de génération, pour que les 4096 jetons de contexte servent à une seule demande
+    // (sinon le contexte peut être partagé entre plusieurs emplacements et le bilan, ~3 900 jetons, ne tient plus).
+    const me = child = spawn(exe, ['-m', MODEL, '--host', '127.0.0.1', '--port', String(port), '-c', '4096', '-np', '1', '-t', String(THREADS), '-ngl', '0', '--no-webui'],
       { cwd: path.dirname(exe), windowsHide: true, stdio: 'ignore' });
-    me.on('exit', () => { if (child === me) { child = null; ready = null; } });
+    const gone = () => { if (child === me) { child = null; ready = null; } };
+    me.on('exit', gone);
+    // Lancement refusé (antivirus, droits, fichier abîmé) : sans cet écouteur, l'erreur arrêterait tout Twilight.
+    me.on('error', e => { console.error('Moteur IA :', e.message); gone(); });
     const t0 = Date.now();
     // Jusqu'à 3 minutes : sur un PC chargé (navigateur, autre programme), le chargement du modèle peut être lent.
     while (Date.now() - t0 < 180000) {
@@ -138,17 +150,28 @@ Plain text only: no bold, no asterisks, no markdown.`,
   }),
 };
 
-// Une étape (correct | coach) : envoie la réponse du modèle au navigateur au fur et à mesure (texte brut).
+// Une étape (correct | coach) : envoie la réponse du modèle au navigateur au fur et à mesure (texte brut),
+// suivie de la marque END si le modèle a fini normalement.
 async function coach(req, res, body) {
   const text = String(body.text || '').slice(0, 4000).trim();
   const stage = STAGES[body.stage] || STAGES.correct;
   if (!text) { res.writeHead(400); return res.end('empty'); }
   const short = (v, n) => String(v || '').slice(0, n);
   const p = stage({ text, corrected: short(body.corrected || text, 4000), topic: short(body.topic, 800), level: /^(A2|B1|B2|C1)$/.test(body.level) ? body.level : 'B2' });
-  try { await ensure(); } catch (e) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end(e.message); }
+  const fail = (code, msg) => { if (!res.headersSent && !res.destroyed) { res.writeHead(code, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(msg); } };
+  // L'utilisateur annule (ou quitte la page), même pendant le démarrage du moteur : on arrête aussi la génération.
+  let up = null, gone = false;
+  res.on('close', () => { if (!res.writableEnded) { gone = true; up?.destroy(); } });
+  try { await ensure(); } catch (e) { return fail(503, e.message); }
+  if (gone || res.destroyed) { touch(); return; }   // parti pendant le démarrage : le moteur s'arrêtera après 10 min sans usage
   busy++; touch();
   let finished = false;
-  const finish = () => { if (finished) return; finished = true; busy--; touch(); if (!res.writableEnded) res.end(); };
+  const finish = () => {
+    if (finished) return;
+    finished = true; busy--; touch();
+    fail(502, 'engine-error');   // aucune réponse du moteur
+    if (!res.writableEnded && !res.destroyed) res.end();   // flux coupé : pas de marque de fin, le navigateur le verra
+  };
   const payload = JSON.stringify({
     messages: [{ role: 'system', content: p.system },
       ...(p.examples || []).flatMap(([q, a]) => [{ role: 'user', content: q }, { role: 'assistant', content: a }]),
@@ -156,9 +179,18 @@ async function coach(req, res, body) {
     stream: true, temperature: p.temperature, top_p: 0.9, max_tokens: p.max_tokens,
     chat_template_kwargs: { enable_thinking: false },
   });
-  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
-  const up = http.request({ host: '127.0.0.1', port, path: '/v1/chat/completions', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, r => {
-    let buf = '';
+  up = http.request({ host: '127.0.0.1', port, path: '/v1/chat/completions', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } }, r => {
+    // Erreur du moteur (contexte trop long, surcharge…) : on la transmet au lieu d'une réponse vide.
+    if (r.statusCode !== 200) {
+      let err = '';
+      r.setEncoding('utf8');
+      r.on('data', c => { if (err.length < 2000) err += c; });
+      r.on('end', () => { console.error(`Moteur IA : HTTP ${r.statusCode}`, err.slice(0, 300)); fail(502, `engine-http-${r.statusCode}`); finish(); });
+      r.on('error', finish);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+    let buf = '', done = false;
     r.setEncoding('utf8');
     r.on('data', chunk => {
       buf += chunk;
@@ -167,20 +199,19 @@ async function coach(req, res, body) {
         const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
         if (!line.startsWith('data:')) continue;
         const data = line.slice(5).trim();
-        if (data === '[DONE]') continue;
-        try { const d = JSON.parse(data).choices?.[0]?.delta?.content; if (d) res.write(d); } catch { /* ligne incomplète */ }
+        if (data === '[DONE]') { done = true; continue; }
+        try { const d = JSON.parse(data).choices?.[0]?.delta?.content; if (d) res.write(d.replaceAll(END, '')); } catch { /* ligne incomplète */ }
       }
     });
-    r.on('end', finish);
+    r.on('end', () => { if (done && !res.writableEnded && !res.destroyed) res.end(END); finish(); });
+    r.on('error', finish);
   });
   up.on('error', finish);
   up.on('close', finish);
-  // L'utilisateur annule : on arrête aussi la génération.
-  res.on('close', () => { if (!res.writableEnded) up.destroy(); });
   up.end(payload);
 }
 
 process.on('exit', stop);
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { stop(); process.exit(0); });
 
-module.exports = { status, coach, ensure, stop };
+module.exports = { status, coach, ensure, stop, END };

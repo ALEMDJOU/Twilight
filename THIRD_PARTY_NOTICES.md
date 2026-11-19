@@ -9,6 +9,7 @@ It bundles or downloads the following third-party components, each under its own
 |---|---|---|
 | [Fraunces](https://github.com/undercasetype/Fraunces) font | `public/fonts/` | SIL Open Font License 1.1 (`public/fonts/LICENSE-Fraunces.txt`) |
 | [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans) font | `public/fonts/` | SIL Open Font License 1.1 (`public/fonts/LICENSE-PlusJakartaSans.txt`) |
+| [Great Vibes](https://github.com/googlefonts/great-vibes) font (logo) | `public/fonts/` | SIL Open Font License 1.1 (`public/fonts/LICENSE-GreatVibes.txt`) |
 
 ## Downloaded at setup time (not committed)
 

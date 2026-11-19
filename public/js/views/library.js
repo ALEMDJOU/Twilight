@@ -1,6 +1,5 @@
 // Bibliothèque : accès libre aux 4 livres, à chaque unité, à ses exercices et à ses cartes.
-import { anchorNav } from '../ui.js';
-import { h, icon, rich, speakBtn, setMode } from '../ui.js';
+import { h, icon, rich, speakBtn, setMode, anchorNav, pageHeading, staleCheck } from '../ui.js';
 import { store } from '../store.js';
 import { BOOKS, bookByKey, unitList, availableCount, loadUnit, unitMeta, getProverbs, cardIds, exerciseIds, cardData } from '../content.js';
 import { renderLesson, runExercises, runCards, lessonAnchors } from '../components.js';
@@ -90,23 +89,43 @@ function proverbsView(root) {
   drawNav();
 }
 
+// Unité inexistante ou illisible : message clair et lien de retour (au lieu d'une erreur technique).
+function unitMissing(root, book, text = 'Cette unité n’existe pas (ou plus). Vérifie le lien, ou choisis une unité dans la bibliothèque.') {
+  root.replaceChildren(h('div', { class: 'card done-card' },
+    h('h1', {}, 'Unité introuvable'),
+    h('p', { class: 'muted' }, text),
+    h('div', { class: 'row-actions' },
+      book ? h('a', { class: 'btn primary', href: `#/library/${book.key}` }, icon('back', 18), book.short) : null,
+      h('a', { class: book ? 'btn ghost' : 'btn primary', href: '#/library' }, icon('book', 18), 'Bibliothèque'))));
+}
+
 export async function unitView(root, params) {
   const [uid, sub] = params;
-  const meta = unitMeta(uid);
+  const stale = staleCheck();
+  let meta = null;
+  try { meta = unitMeta(uid); } catch { meta = null; }
+  if (!meta?.book) return unitMissing(root, null);
+  if (meta.n == null || !meta.title) return unitMissing(root, meta.book);
   if (!meta.available) return libraryView(root, [meta.book.key]);
-  const unit = await loadUnit(uid);
+  let unit;
+  try { unit = await loadUnit(uid); } catch {
+    if (!stale()) unitMissing(root, meta.book, 'Impossible de charger cette unité pour le moment. Vérifie que Twilight est bien lancé, puis réessaie.');
+    return;
+  }
+  if (stale()) return; // on a changé de page pendant le chargement
   const back = h('a', { class: 'back', href: `#/library/${meta.book.key}` }, icon('back', 16), meta.book.short);
 
   if (sub === 'ex') {
-    const holder = h('div');
-    root.replaceChildren(back, holder);
+    const holder = pageHeading(h('div'));
+    root.replaceChildren(h('div', { class: 'runner-page' }, back, holder));
     return runExercises(holder, exerciseIds(uid, unit), { title: `Exercices — ${meta.title}`, subtitle: `${meta.book.short} · Unité ${meta.n}`,
       onFinish: ({ right, total }) => { markUnitExercises(uid, right, total); location.hash = `#/unit/${uid}`; } });
   }
   if (sub === 'cards') {
-    const holder = h('div');
-    root.replaceChildren(back, holder);
+    const holder = pageHeading(h('div'));
+    root.replaceChildren(h('div', { class: 'runner-page' }, back, holder));
     await markLessonDone(uid);
+    if (stale()) return;
     return runCards(holder, cardIds(uid, unit), { title: `Cartes — ${meta.title}`, subtitle: 'Révision libre de l’unité', onFinish: () => { location.hash = `#/unit/${uid}`; } });
   }
 

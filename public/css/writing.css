@@ -1,5 +1,6 @@
 /* Expression écrite : zone d'écriture à gauche, sujet toujours visible à droite (repli en une colonne sur petit écran). */
 .write-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1.2rem; align-items: start; margin-top: .8rem; }
+.write-layout > .card + .card { margin-top: 0; }   /* les deux colonnes commencent à la même hauteur */
 .write-results { margin-top: 1.2rem; display: grid; gap: 1rem; }
 .write-results .feedback:empty { display: none; }
 
@@ -12,11 +13,17 @@
 .write-meter.ok > span { background: var(--green); opacity: 1; }
 .write-meter.long > span { background: var(--amber, #E0A23B); opacity: 1; }
 .write-count { color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.write-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
-.write-hint { margin-left: auto; }
+.write-chars { color: var(--ink-2); font-variant-numeric: tabular-nums; margin-top: -.4rem; }
+.write-chars.over { color: var(--red); font-weight: 650; }
+.write-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .6rem 1rem; }
+/* Deux actions de même poids : le bouton et sa durée dessous. */
+.write-action { display: grid; gap: .3rem; justify-items: start; }
+.write-action small { font-size: .78rem; padding-left: .2rem; }
+.write-hint { margin-left: auto; align-self: center; }
 
 /* Sujet */
-.write-brief { position: sticky; top: 84px; max-height: calc(100vh - 100px); overflow: auto; display: grid; gap: .9rem; align-content: start; }
+/* Collant sans hauteur maximale : tout le sujet reste lisible (pas de défilement caché dans le panneau). */
+.write-brief { position: sticky; top: 84px; display: grid; gap: .9rem; align-content: start; }
 .write-tools { display: flex; gap: .5rem; }
 .write-tools .write-kind { flex: 1; min-width: 0; }
 .write-badges { display: flex; gap: .35rem; flex-wrap: wrap; }
@@ -24,24 +31,27 @@ details.write-block > summary { list-style: none; cursor: pointer; display: flex
 details.write-block > summary::-webkit-details-marker { display: none; }
 details.write-block > summary::after { content: '▾'; margin-left: auto; transition: transform .2s; }
 details.write-block:not([open]) > summary::after { transform: rotate(-90deg); }
-details.write-block > summary:focus-visible { outline: 2px solid var(--plum-ink); outline-offset: 2px; border-radius: 4px; }
+details.write-block > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .write-brief .badge { display: inline-flex; align-items: center; padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 750; letter-spacing: .02em; color: #fff; background: var(--grad); }
 .write-brief .badge.soft { color: var(--ink); background: var(--surface-2); }
 .write-brief .write-prompt { margin: 0; font: 650 1.15rem/1.4 var(--serif); }
 .write-fr summary { cursor: pointer; font-size: .85rem; font-weight: 650; color: var(--ink-2); }
-.write-fr summary:focus-visible { outline: 2px solid var(--plum-ink); outline-offset: 2px; border-radius: 4px; }
+.write-fr summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .write-fr .ex-instr-fr { margin: .4rem 0 0; }
 .write-block h4 { display: flex; align-items: center; gap: .35rem; margin: 0 0 .4rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
 .write-brief .write-points { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; color: var(--ink); font-size: .93rem; }
 .write-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
 .write-chips .chip { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; line-height: 1.25; padding: .25rem .55rem; font-size: .88rem; }
 .write-chips .chip small { font-size: .72rem; font-weight: 500; color: var(--ink-2); }
+.write-chips .write-insert { text-align: left; }
+.write-chips .write-insert:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.gram-list code { font: .9em ui-monospace, Consolas, monospace; padding: 0 .25em; border-radius: 4px; background: var(--surface-2); }
 .small-btn { padding: .35rem .7rem; font-size: .85rem; }
 .small-btn.warn { color: var(--red); border-color: var(--red); }
 
 @media (max-width: 980px) {
   .write-layout { grid-template-columns: 1fr; }
-  .write-brief { position: static; max-height: none; order: -1; }
+  .write-brief { position: static; order: -1; }
   .write-editor .write-area { min-height: 240px; }
   .write-hint { display: none; }
 }

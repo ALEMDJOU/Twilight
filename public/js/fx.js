@@ -10,7 +10,7 @@ export function confetti(intensity = 1) {
   document.body.append(c);
   const ctx = c.getContext('2d');
   ctx.scale(dpr, dpr);
-  const colors = ['#F2B05E', '#E0785F', '#B4507E', '#6E4AA8', '#FFE2A8', '#3CC48A'];
+  const colors = ['#087F75', '#075B9A', '#20BFA9', '#45A3E8', '#0B2545', '#DDF5F2'];
   const parts = Array.from({ length: Math.round(140 * intensity) }, () => ({
     x: innerWidth / 2 + (Math.random() - 0.5) * innerWidth * 0.3,
     y: innerHeight * 0.35,
