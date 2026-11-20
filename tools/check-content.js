@@ -12,6 +12,10 @@ const TYPES = new Set(['mcq', 'gap', 'write', 'fix', 'order', 'match']);
 let errors = 0;
 const err = (f, m) => { errors++; console.error(`  ✗ ${f}: ${m}`); };
 const ok = [];
+// Avertissements : ne bloquent pas l'unité, mais signalent un contenu à relire.
+let warnings = 0;
+const warn = (f, m) => { warnings++; if (process.argv.includes('--warn')) console.warn(`  ⚠ ${f}: ${m}`); };
+const norm = t => String(t).toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim();
 let cards = 0, exercises = 0;
 
 for (const f of fs.readdirSync(UNITS).filter(f => f.endsWith('.json')).sort()) {
@@ -49,6 +53,20 @@ for (const f of fs.readdirSync(UNITS).filter(f => f.endsWith('.json')).sort()) {
       if (x.t === 'order' && x.words && x.words.join(' ').toLowerCase() === a[0].replace(/[.?!]$/, '').toLowerCase()) err(f, `${w}: mots déjà dans l'ordre`);
     }
   });
+  // Doublons dans l'unité (même consigne d'exercice, même carte).
+  const seenQ = new Map();
+  (u.exercises || []).forEach((x, i) => {
+    const key = norm(JSON.stringify([x.t, x.q, x.a, x.o, x.words, x.pairs]));
+    if (seenQ.has(key)) warn(f, `exercice ${i} identique à l'exercice ${seenQ.get(key)}`); else seenQ.set(key, i);
+    if (x.t === 'mcq' && Array.isArray(x.o) && new Set(x.o.map(norm)).size !== x.o.length) warn(f, `exercice ${i}: options de QCM en double`);
+    // Phrase à remettre dans l'ordre : les mots proposés doivent être exactement ceux de la réponse.
+    if (x.t === 'order' && Array.isArray(x.words)) {
+      const a = norm([].concat(x.a)[0] || '').split(' ').sort().join(' ');
+      if (a && norm(x.words.join(' ')).split(' ').sort().join(' ') !== a) warn(f, `exercice ${i}: les mots proposés ne forment pas la réponse`);
+    }
+  });
+  const seenC = new Map();
+  (u.cards || []).forEach((c, i) => { const k = norm(c.en || ''); if (k && seenC.has(k)) warn(f, `carte ${i} identique à la carte ${seenC.get(k)}`); else seenC.set(k, i); });
   (u.cards || []).forEach((c, i) => { if (!c.en) err(f, `carte ${i}: champ en manquant`); if (!c.fr && !c.q) err(f, `carte ${i}: fr ou q manquant`); });
   if (errors === before) { ok.push(id); cards += u.cards.length; exercises += u.exercises.length; }
 }
@@ -58,4 +76,5 @@ ok.sort((a, b) => order(a) - order(b));
 fs.writeFileSync(path.join(DIR, 'index.json'), JSON.stringify({ units: ok, updated: new Date().toISOString() }, null, 1));
 console.log(`${ok.length} unités valides (${exercises} exercices, ${cards} cartes) → index.json`);
 console.log(`  grammaire : ${ok.filter(x => x.startsWith('g')).length}, vocabulaire : ${ok.filter(x => x.startsWith('vi')).length}, avancé : ${ok.filter(x => x.startsWith('va')).length}, collocations : ${ok.filter(x => x.startsWith('co')).length}, idiomes : ${ok.filter(x => x.startsWith('id')).length}, idiomes & phrasal verbs : ${ok.filter(x => x.startsWith('ip')).length}`);
+if (warnings) console.log(`${warnings} avertissement(s) (contenu à relire, non bloquant) — détail : node tools/check-content.js --warn`);
 if (errors) { console.error(`${errors} erreur(s).`); process.exit(1); }

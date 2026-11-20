@@ -34,10 +34,11 @@ async function download(url, dest, size) {
     if (have >= size) break;
     try {
       const r = await fetch(url, { redirect: 'follow', headers: have ? { Range: `bytes=${have}-` } : {} });
-      if (have && r.status !== 206) throw new Error(`reprise refusée (HTTP ${r.status})`);
-      if (!have && !r.ok) throw new Error(`HTTP ${r.status}`);
-      const out = fs.createWriteStream(part, { flags: have ? 'a' : 'w' });
-      let got = have;
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      // Le serveur ignore la reprise (200 au lieu de 206) : il renvoie tout le fichier, on repart de zéro.
+      const resume = have > 0 && r.status === 206;
+      const out = fs.createWriteStream(part, { flags: resume ? 'a' : 'w' });
+      let got = resume ? have : 0;
       for await (const chunk of r.body) {
         if (!out.write(chunk)) await new Promise(res => out.once('drain', res));
         got += chunk.length;

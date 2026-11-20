@@ -606,11 +606,12 @@ function renderCard(c, onGrade) {
   function show() {
     if (wrap.classList.contains('flipped')) return;
     wrap.classList.add('flipped');
-    back.removeAttribute('aria-hidden'); front.setAttribute('aria-hidden', 'true');
+    // Face cachée : ni lue ni atteignable au clavier (inert), seulement la face visible.
+    back.removeAttribute('aria-hidden'); back.inert = false; front.setAttribute('aria-hidden', 'true'); front.inert = true;
     controls.replaceChildren(grades);
     if (store.state.settings.autoSpeak) speak(b.en);
   }
-  back.setAttribute('aria-hidden', 'true');
+  back.setAttribute('aria-hidden', 'true'); back.inert = true;
   front.addEventListener('click', e => { if (!e.target.closest('button')) show(); });
   wrap.append(h('div', { class: 'flash-3d' }, h('div', { class: 'flash-inner' }, front, back)), controls);
   wrap._keys = e => {

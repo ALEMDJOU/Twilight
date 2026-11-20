@@ -15,7 +15,7 @@ function pendingList() {
   const list = pendingDays();
   if (!list.length) return null;
   return h('div', { class: 'pending-days' },
-    h('h3', {}, 'À terminer'),
+    h('h2', {}, 'À terminer'),
     ...list.map(p => h('a', { href: `#/today/${p.key}`, title: `Reprendre la séance du ${fmtDay(p.key)}` },
       h('span', { class: 'sr-only' }, 'Séance du '),
       `${fmtShort(p.key)} · ${p.left} étape${p.left > 1 ? 's' : ''}`)));

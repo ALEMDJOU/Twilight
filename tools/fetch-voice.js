@@ -35,21 +35,28 @@ const FILES = [
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sha256 = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
+// Téléchargement en flux vers un fichier .part, repris avec l'en-tête Range après une coupure
+// (connexion lente ou instable : on ne recommence pas un fichier de 60 Mo depuis le début).
 async function download(url, dest) {
-  for (let attempt = 1; attempt <= 8; attempt++) {
+  const part = dest + '.part';
+  for (let attempt = 1; attempt <= 30; attempt++) {
+    const have = fs.existsSync(part) ? fs.statSync(part).size : 0;
     try {
-      const r = await fetch(url, { redirect: 'follow' });
+      const r = await fetch(url, { redirect: 'follow', headers: have ? { Range: `bytes=${have}-` } : {} });
+      if (r.status === 416) break; // déjà complet
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const buf = Buffer.from(await r.arrayBuffer());
-      fs.writeFileSync(dest + '.part', buf);
-      fs.renameSync(dest + '.part', dest);
-      return;
+      const resume = have > 0 && r.status === 206; // 200 : le serveur renvoie tout, on repart de zéro
+      const out = fs.createWriteStream(part, { flags: resume ? 'a' : 'w' });
+      for await (const chunk of r.body) if (!out.write(chunk)) await new Promise(res => out.once('drain', res));
+      await new Promise(res => out.end(res));
+      break;
     } catch (e) {
-      console.log(`  nouvel essai ${attempt}/8 (${e.message})`);
-      await sleep(3000 * attempt);
+      console.log(`  coupure, reprise dans un instant (${attempt}/30) : ${e.cause?.code || e.message}`);
+      await sleep(Math.min(30000, 2000 * attempt));
+      if (attempt === 30) throw new Error('échec du téléchargement : ' + url);
     }
   }
-  throw new Error('échec du téléchargement : ' + url);
+  fs.renameSync(part, dest);
 }
 
 (async () => {

@@ -95,7 +95,8 @@ function writeState(s) {
 
 // Une copie de la base par jour (data/backups), on garde les 30 dernières.
 function dailyBackup() {
-  const day = new Date().toISOString().slice(0, 10);
+  const d = new Date(); // date locale (pas UTC) : la copie suit la journée de l'utilisateur
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const target = path.join(BACKUPS, `twilight-${day}.db`);
   if (fs.existsSync(target) || !readState()) return;
   db.exec(`VACUUM INTO '${target.replace(/'/g, "''")}'`);

@@ -75,7 +75,7 @@ export async function runWriting(root, { onFinish } = {}) {
   let topic = null;
   const kindEl = h('span', { class: 'badge' });
   const levelEl = h('span', { class: 'badge soft' });
-  const promptEl = h('h3', { class: 'write-prompt' });
+  const promptEl = h('h2', { class: 'write-prompt' });
   const frEl = h('p', { class: 'ex-instr-fr' });
   const pointsEl = h('ul', { class: 'write-points' });
   const usefulEl = h('div', { class: 'write-chips' });
@@ -109,7 +109,7 @@ export async function runWriting(root, { onFinish } = {}) {
   // ---- Zone d'écriture (colonne principale) ----
   const area = h('textarea', { class: 'write-area', rows: 12, spellcheck: 'false', placeholder: 'Write in English…', 'aria-label': 'Ton texte en anglais' });
   const meterFill = h('span');
-  const meter = h('div', { class: 'write-meter', role: 'progressbar', 'aria-valuemin': '0' }, meterFill);
+  const meter = h('div', { class: 'write-meter', role: 'progressbar', 'aria-label': 'Longueur du texte (en mots)', 'aria-valuemin': '0' }, meterFill);
   const count = h('span', { class: 'write-count small' });
   // Au-delà de MAX_CHARS, l'IA ne lirait pas la fin du texte : le compteur l'annonce avant la correction.
   const chars = h('span', { class: 'write-chars small', 'aria-live': 'polite' });
@@ -169,7 +169,7 @@ export async function runWriting(root, { onFinish } = {}) {
     h('div', { class: 'write-badges' }, kindEl, levelEl),
     promptEl,
     h('details', { class: 'write-fr' }, h('summary', {}, 'Voir la traduction'), frEl),
-    h('div', { class: 'write-block' }, h('h4', {}, icon('bulb', 15), 'Pour t’aider'), pointsEl),
+    h('div', { class: 'write-block' }, h('h3', {}, icon('bulb', 15), 'Pour t’aider'), pointsEl),
     helpBlock('book', 'Expressions utiles', usefulEl),
     words.length ? helpBlock('cards', 'Mots de tes leçons',
       h('div', { class: 'write-chips' }, ...words.map(w => insertChip(w.en, w.fr, `${w.fr} · ${unitMeta(w.uid)?.title || ''}`)))) : null);

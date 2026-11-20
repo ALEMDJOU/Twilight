@@ -53,12 +53,34 @@ async function setReminder(enabled, time) {
   return reminderStatus();
 }
 
-function readJson(req) {
+// Lit le corps d'une requête en octets (un caractère UTF-8 peut être coupé entre deux paquets).
+// Trop gros : on répond 413 au lieu de couper la connexion sans explication.
+class TooLarge extends Error {}
+function readBody(req, limit) {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
-    req.on('end', () => { try { resolve(JSON.parse(body || '{}')); } catch (e) { reject(e); } });
+    const chunks = []; let size = 0;
+    req.on('data', c => {
+      size += c.length;
+      if (size > limit) { req.pause(); reject(new TooLarge()); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => { if (size <= limit) resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', reject);
   });
+}
+const readJson = (req, limit = 1e5) => readBody(req, limit).then(b => JSON.parse(b || '{}'));
+const badBody = (res, e) => e instanceof TooLarge ? send(res, 413, 'Payload too large') : send(res, 400, JSON.stringify({ error: e.message }), TYPES['.json']);
+
+// Seule l'application elle-même peut appeler l'API : un autre site ouvert dans le navigateur
+// (Origin différente) ou un nom d'hôte détourné (Host différent) est refusé.
+const LOCAL_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`, `[::1]:${PORT}`]);
+function trusted(req) {
+  if (!LOCAL_HOSTS.has(String(req.headers.host || '').toLowerCase())) return false;
+  const origin = req.headers.origin;
+  if (origin && origin !== 'null') {
+    try { if (!LOCAL_HOSTS.has(new URL(origin).host)) return false; } catch { return false; }
+  }
+  return true;
 }
 
 function send(res, code, body, type = 'text/plain; charset=utf-8') {
@@ -79,12 +101,13 @@ const server = http.createServer((req, res) => {
 
 function route(req, res) {
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname.startsWith('/api/') && !trusted(req)) return send(res, 403, 'Forbidden');
 
   if (url.pathname === '/api/reminder') {
     if (req.method === 'GET') { reminderStatus().then(st => send(res, 200, JSON.stringify(st), TYPES['.json'])); return; }
     if (req.method === 'PUT') {
       readJson(req).then(b => setReminder(!!b.enabled, b.time)).then(st => send(res, 200, JSON.stringify(st), TYPES['.json']))
-        .catch(e => send(res, 400, JSON.stringify({ error: e.message }), TYPES['.json']));
+        .catch(e => badBody(res, e));
       return;
     }
     return send(res, 405, 'Method not allowed');
@@ -97,7 +120,7 @@ function route(req, res) {
   // Correcteur IA local (llama.cpp + Qwen3), démarré à la demande.
   if (url.pathname === '/api/ai' && req.method === 'GET') return send(res, 200, JSON.stringify(ai.status()), TYPES['.json']);
   if (url.pathname === '/api/ai/coach' && req.method === 'POST') {
-    readJson(req).then(b => ai.coach(req, res, b)).catch(() => send(res, 400, 'bad request'));
+    readJson(req).then(b => ai.coach(req, res, b)).catch(e => { if (!res.headersSent) badBody(res, e); });
     return;
   }
 
@@ -106,9 +129,7 @@ function route(req, res) {
       return send(res, 200, JSON.stringify(db.readState()), TYPES['.json']);
     }
     if (req.method === 'PUT') {
-      let body = '';
-      req.on('data', c => { body += c; if (body.length > 50e6) req.destroy(); });
-      req.on('end', () => {
+      readBody(req, 50e6).then(body => {
         try {
           const state = JSON.parse(body);
           if (!state || state.version !== 1) throw new Error('format');
@@ -126,7 +147,7 @@ function route(req, res) {
           console.error('Sauvegarde refusée :', e.message);
           send(res, 400, '{"ok":false}', TYPES['.json']);
         }
-      });
+      }, e => badBody(res, e));
       return;
     }
     return send(res, 405, 'Method not allowed');

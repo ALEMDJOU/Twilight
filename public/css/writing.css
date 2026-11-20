@@ -38,7 +38,7 @@ details.write-block > summary:focus-visible { outline: 3px solid var(--focus); o
 .write-fr summary { cursor: pointer; font-size: .85rem; font-weight: 650; color: var(--ink-2); }
 .write-fr summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 .write-fr .ex-instr-fr { margin: .4rem 0 0; }
-.write-block h4 { display: flex; align-items: center; gap: .35rem; margin: 0 0 .4rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
+.write-block h3 { display: flex; align-items: center; gap: .35rem; margin: 0 0 .4rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-2); }
 .write-brief .write-points { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; color: var(--ink); font-size: .93rem; }
 .write-chips { display: flex; flex-wrap: wrap; gap: .35rem; }
 .write-chips .chip { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0; line-height: 1.25; padding: .25rem .55rem; font-size: .88rem; }

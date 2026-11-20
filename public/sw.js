@@ -2,7 +2,7 @@
 // Tous les fichiers (code, polices, unités, photos) sont gardés dans le cache du navigateur.
 // Deux caches : CACHE (code et unités, renouvelé à chaque version) et ASSETS (voix, moteurs, photos, polices :
 // ~170 Mo qui ne changent pas d'une version à l'autre ; jamais vidé en bloc, seulement des fichiers qui ne sont plus listés).
-const CACHE = 'twilight-v40';
+const CACHE = 'twilight-v41';
 const ASSETS = 'twilight-assets';
 // Voix Piper (environ 100 Mo) : gardée dans le cache pour parler sans internet.
 const VOICE = ['ort.wasm.min.js', 'ort-wasm-simd.wasm', 'ort-wasm.wasm', 'piper_phonemize.js', 'piper_phonemize.wasm', 'piper_phonemize.data', 'en_US-lessac-medium.onnx.json', 'en_US-lessac-medium.onnx'].map(f => 'vendor/piper/' + f)
